@@ -18,6 +18,8 @@ pub struct ScheduleUi {
   day_marker_margin_height: f32,
   #[builder(default = "\"%H:%M\"")]
   time_marker_format: &'static str,
+  #[builder(default = "\"%F\"")]
+  day_marker_format: &'static str,
   #[builder(default = "Local::today()")]
   first_day: Date<Local>,
 }
@@ -54,20 +56,47 @@ impl ScheduleUi {
       painter.line_segment(ends, widget_visuals.bg_stroke);
     }
 
-    // draw the time marks
-    for seg in 0..=self.segment_count {
-      let y = self.segment_height * seg as f32;
-      let x = -visuals.clip_rect_margin;
+    // draw the day marks
+    for nth_day in 0..self.day_count {
+      let y = -(self.day_marker_margin_height - visuals.clip_rect_margin) / 2.0;
+      let x = self.day_width * (nth_day as f32 + 0.5);
 
-      let text = self.time_marker_text(seg).expect("segment out of bound");
+      let text = self.day_marker_text(nth_day).expect("day out of bound");
+
       painter.text(
         base_pos + egui::vec2(x, y),
-        egui::Align2::RIGHT_CENTER,
+        egui::Align2::CENTER_CENTER,
         text,
         egui::TextStyle::Monospace,
         widget_visuals.text_color(),
       );
     }
+
+    // draw the time marks
+    for seg in 0..=self.segment_count {
+      let y = self.segment_height * seg as f32;
+      let x = -(self.time_marker_margin_width - visuals.clip_rect_margin) / 2.0;
+
+      let text = self.time_marker_text(seg).expect("segment out of bound");
+      painter.text(
+        base_pos + egui::vec2(x, y),
+        egui::Align2::CENTER_CENTER,
+        text,
+        egui::TextStyle::Monospace,
+        widget_visuals.text_color(),
+      );
+    }
+  }
+
+  fn day_marker_text(&self, nth_day: usize) -> Option<String> {
+    if nth_day >= self.day_count {
+      return None;
+    }
+
+    let day = self.first_day + Duration::days(nth_day as i64);
+    let formatted_day = day.format(self.day_marker_format);
+
+    Some(format!("{formatted_day}"))
   }
 
   fn time_marker_text(&self, segment: usize) -> Option<String> {
@@ -99,9 +128,11 @@ impl ScheduleUi {
     // give a bit more vertical space to display the last time mark
     let text_safe_margin = 10.0;
 
-    Vec2::new(
-      self.day_width * (self.day_count + 1) as f32,
-      self.segment_height * (self.segment_count + 1) as f32 + text_safe_margin,
+    egui::vec2(
+      self.time_marker_margin_width + self.day_width * self.day_count as f32,
+      self.day_marker_margin_height
+        + self.segment_height * self.segment_count as f32
+        + text_safe_margin,
     )
   }
 }
