@@ -139,7 +139,7 @@ impl ScheduleUi {
 
     let mut event_ui = ui.child_ui_with_id_source(rect, layout, event_id);
 
-    let button = Button::new(event.title.clone());
+    let button = Button::new(event.title.clone()).fill(event.color);
     Some(event_ui.add_sized(rect.size(), button))
   }
 
