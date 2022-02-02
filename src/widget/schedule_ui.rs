@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{Date, DateTime, Duration, Local};
 use derive_builder::Builder;
 use eframe::egui::{self, vec2, Button, Color32, Rect, Response, Ui, Vec2};
@@ -31,26 +33,27 @@ pub struct ScheduleUi {
   #[builder(default = "std::time::Instant::now()", setter(skip))]
   last_update: std::time::Instant,
 
-  // events to render
-  #[builder(default = "ScheduleUi::default_events()")]
-  events: Vec<EventBlock>,
+  #[builder(default, setter(skip))]
+  layout: HashMap<String, Vec<Rect>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EventBlock {
-  id: String,
-  color: Color32,
-  title: String,
-  description: Option<String>,
-  start: DateTime<Local>,
-  end: DateTime<Local>,
+  pub id: String,
+  pub color: Color32,
+  pub title: String,
+  pub description: Option<String>,
+  pub start: DateTime<Local>,
+  pub end: DateTime<Local>,
 }
 
 #[derive(Debug)]
 enum EventBlockType {
-  SingleDay(Date<Local>, [f32; 2]),
+  Single(Date<Local>, [f32; 2]),
+  #[allow(unused)]
   AllDay([Date<Local>; 2]),
-  CrossDay([DateTime<Local>; 2]),
+  #[allow(unused)]
+  Multi([DateTime<Local>; 2]),
 }
 
 impl EventBlock {
@@ -60,7 +63,7 @@ impl EventBlock {
       let date = self.start.date();
       let a = day_progress(&self.start);
       let b = day_progress(&self.end);
-      return EventBlockType::SingleDay(date, [a, b]);
+      return EventBlockType::Single(date, [a, b]);
     }
 
     unimplemented!()
@@ -70,45 +73,74 @@ impl EventBlock {
 const SECS_PER_DAY: u64 = 24 * 3600;
 
 impl ScheduleUi {
-  // just for debugging
-  fn default_events() -> Vec<EventBlock> {
-    let mut events = vec![];
+  // the caller must ensure the events are all within the correct days
+  fn layout_events(&mut self, events: &[EventBlock]) {
+    use intervaltree::{Element, IntervalTree};
+    // EventId => (col_start, col_end, total_cols)
+    let mut event_column: HashMap<&String, (usize, usize, usize)> =
+      HashMap::new();
 
-    events.push(EventBlock {
-      id: "1".into(),
-      color: Color32::GREEN,
-      title: "C: vocab".into(),
-      description: None,
-      start: Local::today().and_hms(14, 0, 0),
-      end: Local::today().and_hms(15, 0, 0),
-    });
-    events.push(EventBlock {
-      id: "2".into(),
-      color: Color32::GREEN,
-      title: "C: feynman".into(),
-      description: None,
-      start: Local::today().and_hms(15, 0, 0),
-      end: Local::today().and_hms(16, 0, 0),
-    });
+    // First step: assign each event a column
+    for day in 0..self.day_count {
+      // layout for each day
+      let filtered_events: HashMap<_, _> = events
+        .iter()
+        .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
+        .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
+        .map(|e| (&e.id, e))
+        .collect();
 
-    events
+      let tree: IntervalTree<DateTime<Local>, &String> = filtered_events
+        .iter()
+        .map(|(&id, e)| (e.start..e.end, id))
+        .collect();
+
+      for Element { range, value: id } in tree.iter_sorted() {
+        if event_column.contains_key(id) {
+          continue;
+        }
+
+        let range = range.clone();
+        let mut siblings: Vec<_> = tree.query(range.clone()).collect();
+        siblings.sort_by_key(|e| e.range.start);
+
+        let num_cols = siblings.len();
+        for (n, Element { value: id, .. }) in siblings.into_iter().enumerate() {
+          event_column.entry(*id).or_insert((n, n + 1, num_cols));
+        }
+      }
+    }
+
+    self.layout.clear();
+    // Second step: assign each event a rect
+    for e in events {
+      if let EventBlockType::Single(date, [a, b]) = e.layout_type() {
+        if let Some(day) = self.date_to_day(date) {
+          let (col0, col1, tcol) = event_column.get(&e.id).unwrap();
+          let t0 = *col0 as f32 / *tcol as f32;
+          let t1 = *col1 as f32 / *tcol as f32;
+
+          let x0 = self.day_width * (day as f32 + t0);
+          let x1 = self.day_width * (day as f32 + t1);
+          let y0 = self.content_height() * a;
+          let y1 = self.content_height() * b;
+
+          let rect = Rect::from_x_y_ranges(x0..=x1, y0..=y1);
+          self.layout.insert(e.id.clone(), vec![rect]);
+        }
+      }
+    }
   }
 
   fn add_event_block(
     &mut self,
     ui: &mut Ui,
-    event_block: &EventBlock,
+    event_block: &mut EventBlock,
     rect: Rect,
   ) -> Option<Response> {
     match event_block.layout_type() {
-      EventBlockType::SingleDay(date, progress) => {
-        return self.add_single_day_event_block(
-          ui,
-          event_block,
-          date,
-          progress,
-          rect,
-        );
+      EventBlockType::Single(..) => {
+        return self.add_single_day_event_block(ui, event_block, rect);
       }
       _ => unimplemented!(),
     }
@@ -117,29 +149,25 @@ impl ScheduleUi {
   fn add_single_day_event_block(
     &mut self,
     ui: &mut Ui,
-    event: &EventBlock,
-    date: Date<Local>,
-    progress: [f32; 2],
+    event: &mut EventBlock,
     rect: Rect,
   ) -> Option<Response> {
-    let day_number = self.date_to_day(date)?;
-    let x0 = self.day_width * day_number as f32;
-    let x1 = self.day_width * (day_number + 1) as f32;
-    let y0 = self.content_height() * progress[0];
-    let y1 = self.content_height() * progress[1];
+    let event_rect = self.layout.get(&event.id)?.first()?;
 
-    let margin = ui.visuals().clip_rect_margin;
+    let event_rect_margin = ui.visuals().clip_rect_margin;
+    let event_rect_offset = rect.left_top().to_vec2() + self.content_offset();
 
-    let top_left = rect.left_top() + self.content_offset() + vec2(x0, y0);
-    let bottom_right = rect.left_top() + self.content_offset() + vec2(x1, y1);
-    let rect = Rect::from_min_max(top_left, bottom_right).shrink(margin);
+    let event_rect = event_rect
+      .shrink(event_rect_margin)
+      .translate(event_rect_offset);
+
     let layout = egui::Layout::left_to_right();
     let event_id = event.id.clone();
 
-    let mut event_ui = ui.child_ui_with_id_source(rect, layout, event_id);
+    let mut event_ui = ui.child_ui_with_id_source(event_rect, layout, event_id);
 
     let button = Button::new(event.title.clone());
-    Some(event_ui.add_sized(rect.size(), button))
+    Some(event_ui.add_sized(event_rect.size(), button))
   }
 
   fn date_to_day(&self, date: Date<Local>) -> Option<usize> {
@@ -226,6 +254,7 @@ impl ScheduleUi {
   fn content_height(&self) -> f32 {
     self.segment_height * self.segment_count as f32
   }
+
   fn content_width(&self) -> f32 {
     self.day_width * self.day_count as f32
   }
@@ -286,10 +315,12 @@ impl ScheduleUi {
         + clip_margin,
     )
   }
-}
 
-impl egui::Widget for &mut ScheduleUi {
-  fn ui(self, ui: &mut Ui) -> Response {
+  pub fn show(
+    &mut self,
+    ui: &mut Ui,
+    events: &mut Vec<EventBlock>,
+  ) -> Response {
     let (rect, mut response) = ui.allocate_exact_size(
       self.desired_size(ui),
       egui::Sense::click_and_drag(),
@@ -299,7 +330,9 @@ impl egui::Widget for &mut ScheduleUi {
       self.draw_ticks(ui, rect);
     }
 
-    for event in self.events.clone().iter() {
+    self.layout_events(events);
+
+    for event in events.iter_mut() {
       if let Some(event_response) = self.add_event_block(ui, event, rect) {
         response = response.union(event_response);
       }

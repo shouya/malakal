@@ -10,3 +10,4 @@ malakal-widget = { path = "../malakal-widget" }
 eframe = "0.16.0"
 chrono = "0.4.19"
 derive_builder = "0.10.2"
+intervaltree = "0.2.7"
