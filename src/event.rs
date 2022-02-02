@@ -1,3 +1,1 @@
-pub struct Event {
-  color: Color
-}
+pub struct Event {}
