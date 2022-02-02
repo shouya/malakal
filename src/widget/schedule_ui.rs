@@ -86,7 +86,7 @@ impl ScheduleUi {
         .map(|e| (&e.id, e.start.timestamp(), e.end.timestamp()).into())
         .collect();
 
-      layout.merge(layout::NaiveAlgorithm::compute(events))
+      layout.merge(layout::MarkusAlgorithm::compute(events))
     }
     layout
   }
@@ -104,7 +104,7 @@ impl ScheduleUi {
         let day = self.date_to_day(date)?;
         let rect = self.layout_single_day_event(rect, day, y, rel_x);
 
-        return self.put_event_block(ui, event_block, rect);
+        self.put_event_block(ui, event_block, rect)
       }
       _ => unimplemented!(),
     }
@@ -132,7 +132,7 @@ impl ScheduleUi {
     event: &mut EventBlock,
     rect: Rect,
   ) -> Option<Response> {
-    let rect = rect.shrink(ui.visuals().clip_rect_margin);
+    let rect = rect.shrink(ui.visuals().clip_rect_margin / 2.0);
 
     let layout = egui::Layout::left_to_right();
     let event_id = event.id.clone();

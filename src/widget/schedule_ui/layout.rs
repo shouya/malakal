@@ -50,7 +50,6 @@ impl LayoutAlgorithm for NaiveAlgorithm {
     // EventId => (col, total_cols)
     let mut columns: HashMap<&EventId, (usize, usize)> = HashMap::new();
 
-    // First step: assign each event a column
     events.sort_by_key(|e| e.start - e.end);
 
     let tree: IntervalTree<i64, &String> =
@@ -82,4 +81,74 @@ impl LayoutAlgorithm for NaiveAlgorithm {
 
     Layout::from_map(layout)
   }
+}
+
+// https://stackoverflow.com/a/11323909
+pub struct MarkusAlgorithm;
+
+impl LayoutAlgorithm for MarkusAlgorithm {
+  fn compute(mut events: Vec<Ev<'_>>) -> Layout {
+    events.sort_by_key(|e| e.start);
+
+    let ev_map: HashMap<_, _> = events.iter().map(|e| (e.id, e)).collect();
+
+    let mut groups: Vec<(HashMap<&EventId, usize>, usize)> = vec![];
+
+    let mut group: HashMap<&EventId, usize> = Default::default();
+    let mut group_width: usize = 1;
+
+    for event in events.iter() {
+      if group.is_empty() {
+        group.insert(event.id, 0);
+        continue;
+      }
+
+      let overlapped = group.iter().any(|(id, _c)| overlaps(event, ev_map[id]));
+
+      if !overlapped {
+        // start a new group
+        groups.push((group, group_width));
+        group = Default::default();
+        group_width = 1;
+
+        group.insert(event.id, 0);
+        continue;
+      }
+
+      // there is an overlap with existing group members, find a slot to put in
+      for col in 0..=group_width {
+        let slot_used = group
+          .iter()
+          .filter(|(_, &c)| c == col)
+          .any(|(id, _c)| overlaps(event, ev_map[id]));
+
+        if slot_used {
+          continue;
+        }
+
+        group.insert(event.id, col);
+        group_width = group_width.max(col + 1);
+        break;
+      }
+    }
+
+    if !group.is_empty() {
+      groups.push((group, group_width));
+    }
+
+    let mut layout = HashMap::new();
+    for (group, width) in groups {
+      for (id, col) in group {
+        let x0 = col as f32 / width as f32;
+        let x1 = (col + 1) as f32 / width as f32;
+        layout.insert(id.clone(), [x0, x1]);
+      }
+    }
+
+    Layout::from_map(layout)
+  }
+}
+
+fn overlaps(e1: &Ev, e2: &Ev) -> bool {
+  e1.start.max(e2.start) < e1.end.min(e2.end)
 }
