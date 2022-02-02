@@ -1,8 +1,10 @@
-use std::collections::HashMap;
+mod layout;
 
 use chrono::{Date, DateTime, Duration, Local};
 use derive_builder::Builder;
 use eframe::egui::{self, vec2, Button, Color32, Rect, Response, Ui, Vec2};
+
+use layout::{Layout, LayoutAlgorithm};
 
 #[derive(Builder, Clone, Debug, PartialEq)]
 pub struct ScheduleUi {
@@ -32,14 +34,13 @@ pub struct ScheduleUi {
   // used to refresh every second
   #[builder(default = "std::time::Instant::now()", setter(skip))]
   last_update: std::time::Instant,
-
-  #[builder(default, setter(skip))]
-  layout: HashMap<String, Vec<Rect>>,
 }
+
+type EventId = String;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EventBlock {
-  pub id: String,
+  pub id: EventId,
   pub color: Color32,
   pub title: String,
   pub description: Option<String>,
@@ -74,100 +75,72 @@ const SECS_PER_DAY: u64 = 24 * 3600;
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events(&mut self, events: &[EventBlock]) {
-    use intervaltree::{Element, IntervalTree};
-    // EventId => (col_start, col_end, total_cols)
-    let mut event_column: HashMap<&String, (usize, usize, usize)> =
-      HashMap::new();
-
-    // First step: assign each event a column
+  fn layout_events<'a>(&self, events: &'a [EventBlock]) -> Layout {
+    let mut layout = Layout::default();
     for day in 0..self.day_count {
       // layout for each day
-      let filtered_events: HashMap<_, _> = events
+      let events: Vec<layout::Ev<'a>> = events
         .iter()
-        .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
-        .map(|e| (&e.id, e))
+        .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
+        .map(|e| (&e.id, e.start.timestamp(), e.end.timestamp()).into())
         .collect();
 
-      let tree: IntervalTree<DateTime<Local>, &String> = filtered_events
-        .iter()
-        .map(|(&id, e)| (e.start..e.end, id))
-        .collect();
-
-      for Element { range, value: id } in tree.iter_sorted() {
-        if event_column.contains_key(id) {
-          continue;
-        }
-
-        let range = range.clone();
-        let mut siblings: Vec<_> = tree.query(range.clone()).collect();
-        siblings.sort_by_key(|e| e.range.start);
-
-        let num_cols = siblings.len();
-        for (n, Element { value: id, .. }) in siblings.into_iter().enumerate() {
-          event_column.entry(*id).or_insert((n, n + 1, num_cols));
-        }
-      }
+      layout.merge(layout::NaiveAlgorithm::compute(events))
     }
-
-    self.layout.clear();
-    // Second step: assign each event a rect
-    for e in events {
-      if let EventBlockType::Single(date, [a, b]) = e.layout_type() {
-        if let Some(day) = self.date_to_day(date) {
-          let (col0, col1, tcol) = event_column.get(&e.id).unwrap();
-          let t0 = *col0 as f32 / *tcol as f32;
-          let t1 = *col1 as f32 / *tcol as f32;
-
-          let x0 = self.day_width * (day as f32 + t0);
-          let x1 = self.day_width * (day as f32 + t1);
-          let y0 = self.content_height() * a;
-          let y1 = self.content_height() * b;
-
-          let rect = Rect::from_x_y_ranges(x0..=x1, y0..=y1);
-          self.layout.insert(e.id.clone(), vec![rect]);
-        }
-      }
-    }
+    layout
   }
 
   fn add_event_block(
-    &mut self,
+    &self,
     ui: &mut Ui,
     event_block: &mut EventBlock,
     rect: Rect,
+    layout: &Layout,
   ) -> Option<Response> {
     match event_block.layout_type() {
-      EventBlockType::Single(..) => {
-        return self.add_single_day_event_block(ui, event_block, rect);
+      EventBlockType::Single(date, y) => {
+        let rel_x = layout.query(&event_block.id)?;
+        let day = self.date_to_day(date)?;
+        let rect = self.layout_single_day_event(rect, day, y, rel_x);
+
+        return self.put_event_block(ui, event_block, rect);
       }
       _ => unimplemented!(),
     }
   }
 
-  fn add_single_day_event_block(
-    &mut self,
+  fn layout_single_day_event(
+    &self,
+    rect: Rect,
+    day: usize,
+    y: [f32; 2],
+    relative_x: [f32; 2],
+  ) -> Rect {
+    let frame_offset = rect.left_top().to_vec2() + self.content_offset();
+    let x_offset = self.day_width * day as f32;
+    let x0 = x_offset + relative_x[0] * self.day_width;
+    let x1 = x_offset + relative_x[1] * self.day_width;
+    let y0 = y[0] * self.content_height();
+    let y1 = y[1] * self.content_height();
+    Rect::from_x_y_ranges(x0..=x1, y0..=y1).translate(frame_offset)
+  }
+
+  fn put_event_block(
+    &self,
     ui: &mut Ui,
     event: &mut EventBlock,
     rect: Rect,
   ) -> Option<Response> {
-    let event_rect = self.layout.get(&event.id)?.first()?;
-
-    let event_rect_margin = ui.visuals().clip_rect_margin;
-    let event_rect_offset = rect.left_top().to_vec2() + self.content_offset();
-
-    let event_rect = event_rect
-      .shrink(event_rect_margin)
-      .translate(event_rect_offset);
+    let rect = rect.shrink(ui.visuals().clip_rect_margin);
 
     let layout = egui::Layout::left_to_right();
     let event_id = event.id.clone();
 
-    let mut event_ui = ui.child_ui_with_id_source(event_rect, layout, event_id);
+    let mut event_ui = ui.child_ui_with_id_source(rect, layout, event_id);
 
     let button = Button::new(event.title.clone());
-    Some(event_ui.add_sized(event_rect.size(), button))
+    Some(event_ui.add_sized(rect.size(), button))
   }
 
   fn date_to_day(&self, date: Date<Local>) -> Option<usize> {
@@ -330,10 +303,12 @@ impl ScheduleUi {
       self.draw_ticks(ui, rect);
     }
 
-    self.layout_events(events);
+    let layout = self.layout_events(events);
 
     for event in events.iter_mut() {
-      if let Some(event_response) = self.add_event_block(ui, event, rect) {
+      if let Some(event_response) =
+        self.add_event_block(ui, event, rect, &layout)
+      {
         response = response.union(event_response);
       }
     }
