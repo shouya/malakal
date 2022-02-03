@@ -46,8 +46,8 @@ impl App {
     });
     self.events.push(EventBlock {
       id: "3".into(),
-      color: egui::Color32::GREEN,
-      title: "C: feynman".into(),
+      color: egui::Color32::RED,
+      title: "C: feynman 2".into(),
       description: None,
       start: Local::today().and_hms(15, 30, 0),
       end: Local::today().and_hms(16, 0, 0),
