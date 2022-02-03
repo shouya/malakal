@@ -3,8 +3,8 @@ mod layout;
 use chrono::{Date, DateTime, Duration, Local, NaiveDateTime};
 use derive_builder::Builder;
 use eframe::egui::{
-  self, vec2, Button, Color32, CursorIcon, Pos2, Rect, Response, Sense, Ui,
-  Vec2,
+  self, pos2, vec2, Button, Color32, CursorIcon, Pos2, Rect, Response, Sense,
+  Ui, Vec2,
 };
 
 use layout::{Layout, LayoutAlgorithm};
@@ -146,24 +146,46 @@ impl ScheduleUi {
     let id = egui::Id::new("event").with(&event.id);
 
     let response = ui.allocate_ui_at_rect(event_rect, |ui| {
-      let [upper_resizer_rect, _main_rect, _lower_resizer_rect] =
-        self.split_event_block_regions(event_rect);
-
       let button_resp = ui.add_sized(event_rect.size(), button);
-      if let Some(pointer_pos) =
-        resizer(ui, id.with("res.upper"), upper_resizer_rect)
-      {
-        if let Some(new_start) =
-          self.pointer_pos_to_datetime(widget_rect, pointer_pos)
-        {
-          event.start = dbg!(new_start);
-        }
-      }
+
+      self.event_resizers(ui, id, event, event_rect, widget_rect);
 
       button_resp
     });
 
     Some(response.inner)
+  }
+
+  fn event_resizers(
+    &self,
+    ui: &mut Ui,
+    id: egui::Id,
+    event: &mut EventBlock,
+    event_rect: Rect,
+    widget_rect: Rect,
+  ) -> bool {
+    let [upper_resizer_rect, _main_rect, lower_resizer_rect] =
+      self.split_event_block_regions(event_rect);
+
+    let upper_resizer = resizer(ui, id.with("res.upper"), upper_resizer_rect);
+    let lower_resizer = resizer(ui, id.with("res.lower"), lower_resizer_rect);
+
+    let mut changed = false;
+
+    if let Some(pointer_pos) = upper_resizer {
+      if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
+        event.start = t;
+        changed = true;
+      }
+    }
+    if let Some(pointer_pos) = lower_resizer {
+      if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
+        event.end = t;
+        changed = true;
+      }
+    }
+
+    changed
   }
 
   fn pointer_pos_to_datetime(
@@ -230,7 +252,7 @@ impl ScheduleUi {
     let visuals = ui.style().visuals.clone();
     let widget_visuals = ui.style().noninteractive();
 
-    let base_pos = self.content_offset(rect);
+    let offset = self.content_offset(rect);
     let painter = ui.painter_at(rect);
 
     // vertical lines
@@ -238,7 +260,7 @@ impl ScheduleUi {
       let x = self.day_width * day as f32;
       let y0 = 0.0;
       let y1 = self.segment_height * self.segment_count as f32;
-      let ends = [base_pos + vec2(x, y0), base_pos + vec2(x, y1)];
+      let ends = [pos2(x, y0) + offset, pos2(x, y1) + offset];
 
       painter.line_segment(ends, widget_visuals.bg_stroke);
     }
@@ -248,7 +270,7 @@ impl ScheduleUi {
       let y = self.segment_height * seg as f32;
       let x0 = 0.0;
       let x1 = self.day_width * self.day_count as f32;
-      let ends = [base_pos + vec2(x0, y), base_pos + vec2(x1, y)];
+      let ends = [pos2(x0, y) + offset, pos2(x1, y) + offset];
 
       painter.line_segment(ends, widget_visuals.bg_stroke);
     }
@@ -261,7 +283,7 @@ impl ScheduleUi {
       let text = self.day_header_text(nth_day).expect("day out of bound");
 
       painter.text(
-        base_pos + vec2(x, y),
+        pos2(x, y) + offset,
         egui::Align2::CENTER_CENTER,
         text,
         egui::TextStyle::Monospace,
@@ -276,7 +298,7 @@ impl ScheduleUi {
 
       let text = self.time_marker_text(seg).expect("segment out of bound");
       painter.text(
-        base_pos + vec2(x, y),
+        pos2(x, y) + offset,
         egui::Align2::CENTER_CENTER,
         text,
         egui::TextStyle::Monospace,
@@ -290,8 +312,8 @@ impl ScheduleUi {
       let x0 = -visuals.clip_rect_margin;
       let x1 = self.content_width();
 
-      let p0 = base_pos + vec2(x0, y);
-      let p1 = base_pos + vec2(x1, y);
+      let p0 = pos2(x0, y) + offset;
+      let p1 = pos2(x1, y) + offset;
       let mut indicator_stroke = widget_visuals.bg_stroke;
       indicator_stroke.color = Color32::RED;
       painter.line_segment([p0, p1], indicator_stroke);
@@ -400,7 +422,7 @@ fn day_progress(datetime: &DateTime<Local>) -> f32 {
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
 }
 
-pub fn resizer(ui: &mut Ui, id: egui::Id, rect: Rect) -> Option<Pos2> {
+fn resizer(ui: &mut Ui, id: egui::Id, rect: Rect) -> Option<Pos2> {
   let is_being_dragged = ui.memory().is_being_dragged(id);
 
   if !is_being_dragged {
