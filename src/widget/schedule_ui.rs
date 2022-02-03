@@ -3,8 +3,8 @@ mod layout;
 use chrono::{Date, DateTime, Duration, Local, NaiveDateTime};
 use derive_builder::Builder;
 use eframe::egui::{
-  self, pos2, vec2, Button, Color32, CursorIcon, Pos2, Rect, Response, Sense,
-  Ui, Vec2,
+  self, pos2, vec2, Button, Color32, CursorIcon, Label, LayerId, Pos2, Rect,
+  Response, Sense, Ui, Vec2,
 };
 
 use layout::{Layout, LayoutAlgorithm};
@@ -40,6 +40,18 @@ pub struct ScheduleUi {
 
   #[builder(default = "10.0")]
   resizer_height: f32,
+
+  #[builder(default = "Duration::minutes(15)")]
+  min_event_duration: Duration,
+
+  #[builder(default = "Duration::minutes(15)")]
+  snapping_duration: Duration,
+
+  #[builder(default = "\"%H:%M\"")]
+  event_resizing_hint_format: &'static str,
+
+  #[builder(default)]
+  current_event: Option<EventBlock>,
 }
 
 type EventId = String;
@@ -139,21 +151,15 @@ impl ScheduleUi {
     event_rect: Rect,
     widget_rect: Rect,
   ) -> Option<Response> {
-    let event_rect = event_rect.shrink(ui.visuals().clip_rect_margin / 2.0);
-
-    let button = Button::new(event.title.clone()).fill(event.color);
-
+    let event_rect = event_rect.shrink(1.0);
     let id = egui::Id::new("event").with(&event.id);
 
-    let response = ui.allocate_ui_at_rect(event_rect, |ui| {
-      let button_resp = ui.add_sized(event_rect.size(), button);
+    let button = Button::new(event.title.clone()).fill(event.color);
+    let button_resp = ui.put(event_rect, button);
 
-      self.event_resizers(ui, id, event, event_rect, widget_rect);
+    self.event_resizers(ui, id, event, event_rect, widget_rect);
 
-      button_resp
-    });
-
-    Some(response.inner)
+    Some(button_resp)
   }
 
   fn event_resizers(
@@ -174,18 +180,59 @@ impl ScheduleUi {
 
     if let Some(pointer_pos) = upper_resizer {
       if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
-        event.start = t;
+        self.set_event_start(event, t);
+        let time = event.start.format(self.event_resizing_hint_format);
+        show_resizer_hint(ui, upper_resizer_rect, format!("{}", time));
+
         changed = true;
       }
     }
     if let Some(pointer_pos) = lower_resizer {
       if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
-        event.end = t;
+        self.set_event_end(event, t);
+        let time = event.end.format(self.event_resizing_hint_format);
+        show_resizer_hint(ui, lower_resizer_rect, format!("{}", time));
         changed = true;
       }
     }
 
     changed
+  }
+
+  // squeeze event end if necessary
+  fn set_event_start(
+    &self,
+    event: &mut EventBlock,
+    mut new_start: DateTime<Local>,
+  ) {
+    if event.end <= new_start {
+      let mut new_end = new_start + self.min_event_duration;
+      if new_end.date() != event.end.date() {
+        let end_of_day =
+          (event.end.date() + Duration::days(1)).and_hms(0, 0, 0);
+        new_end = end_of_day - Duration::seconds(1);
+        new_start = end_of_day - self.min_event_duration;
+      }
+      event.end = new_end;
+    }
+    event.start = new_start;
+  }
+
+  fn set_event_end(
+    &self,
+    event: &mut EventBlock,
+    mut new_end: DateTime<Local>,
+  ) {
+    if new_end <= event.start {
+      let mut new_start = new_end - self.min_event_duration;
+      if new_start.date() != event.start.date() {
+        let beginning_of_day = event.start.date().and_hms(0, 0, 0);
+        new_start = beginning_of_day;
+        new_end = new_start + self.min_event_duration;
+      }
+      event.start = new_start;
+    }
+    event.end = new_end;
   }
 
   fn pointer_pos_to_datetime(
@@ -423,6 +470,10 @@ fn day_progress(datetime: &DateTime<Local>) -> f32 {
 }
 
 fn resizer(ui: &mut Ui, id: egui::Id, rect: Rect) -> Option<Pos2> {
+  if rect.area() == 0.0 {
+    return None;
+  }
+
   let is_being_dragged = ui.memory().is_being_dragged(id);
 
   if !is_being_dragged {
@@ -434,9 +485,16 @@ fn resizer(ui: &mut Ui, id: egui::Id, rect: Rect) -> Option<Pos2> {
     ui.output().cursor_icon = CursorIcon::ResizeVertical;
 
     if let Some(pointer_pos) = ui.ctx().input().pointer.interact_pos() {
-      return Some(dbg!(pointer_pos));
+      return Some(pointer_pos);
     }
   }
 
   None
+}
+
+fn show_resizer_hint(ui: &mut Ui, rect: Rect, text: String) {
+  let layer_id = egui::Id::new("resizer_hint");
+  let layer = LayerId::new(egui::Order::Tooltip, layer_id);
+  let label = Label::new(egui::RichText::new(text).monospace());
+  ui.with_layer_id(layer, |ui| ui.put(rect, label));
 }
