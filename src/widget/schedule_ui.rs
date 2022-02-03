@@ -1,6 +1,6 @@
 mod layout;
 
-use chrono::{Date, DateTime, Duration, Local, NaiveDateTime};
+use chrono::{Date, DateTime, Duration, Local};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, vec2, Button, Color32, CursorIcon, Label, LayerId, Pos2, Rect,
@@ -85,11 +85,24 @@ impl EventBlock {
       return EventBlockType::Single(date, [a, b]);
     }
 
+    if self.end == (self.start.date() + one_day()).and_hms(0, 0, 0) {
+      let date = self.start.date();
+      let a = day_progress(&self.start);
+      let b = 1.0;
+      return EventBlockType::Single(date, [a, b]);
+    }
+
     unimplemented!()
   }
 }
 
 const SECS_PER_DAY: u64 = 24 * 3600;
+
+// can't be a constant because chrono::Duration constructors are not
+// declared as const functions.
+fn one_day() -> Duration {
+  Duration::days(1)
+}
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
@@ -175,11 +188,18 @@ impl ScheduleUi {
 
     let upper_resizer = resizer(ui, id.with("res.upper"), upper_resizer_rect);
     let lower_resizer = resizer(ui, id.with("res.lower"), lower_resizer_rect);
+    let pointer_to_datetime = move |ui: &Ui, pos| {
+      if ui.ctx().input().modifiers.shift_only() {
+        self.pointer_pos_to_datetime(widget_rect, pos)
+      } else {
+        self.pointer_pos_to_datetime_snapping(widget_rect, pos)
+      }
+    };
 
     let mut changed = false;
 
     if let Some(pointer_pos) = upper_resizer {
-      if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
+      if let Some(t) = pointer_to_datetime(ui, pointer_pos) {
         self.set_event_start(event, t);
         let time = event.start.format(self.event_resizing_hint_format);
         show_resizer_hint(ui, upper_resizer_rect, format!("{}", time));
@@ -188,7 +208,7 @@ impl ScheduleUi {
       }
     }
     if let Some(pointer_pos) = lower_resizer {
-      if let Some(t) = self.pointer_pos_to_datetime(widget_rect, pointer_pos) {
+      if let Some(t) = pointer_to_datetime(ui, pointer_pos) {
         self.set_event_end(event, t);
         let time = event.end.format(self.event_resizing_hint_format);
         show_resizer_hint(ui, lower_resizer_rect, format!("{}", time));
@@ -208,8 +228,7 @@ impl ScheduleUi {
     if event.end <= new_start {
       let mut new_end = new_start + self.min_event_duration;
       if new_end.date() != event.end.date() {
-        let end_of_day =
-          (event.end.date() + Duration::days(1)).and_hms(0, 0, 0);
+        let end_of_day = (event.end.date() + one_day()).and_hms(0, 0, 0);
         new_end = end_of_day - Duration::seconds(1);
         new_start = end_of_day - self.min_event_duration;
       }
@@ -248,7 +267,7 @@ impl ScheduleUi {
 
     let vert_pos = rel_pos.y / self.content_height();
     if !(vert_pos > 0.0 && vert_pos < 1.0) {
-      return dbg!(None);
+      return None;
     }
 
     let seconds = (SECS_PER_DAY as f32 * vert_pos) as i64;
@@ -258,13 +277,30 @@ impl ScheduleUi {
     Some(time)
   }
 
-  #[allow(unused)]
-  fn pos_to_datetime_snapping(
+  fn pointer_pos_to_datetime_snapping(
     &self,
-    _offset: Vec2,
-    _pos: Pos2,
-  ) -> Option<NaiveDateTime> {
-    None
+    widget_rect: Rect,
+    pointer_pos: Pos2,
+  ) -> Option<DateTime<Local>> {
+    let rel_pos = pointer_pos - self.content_offset(widget_rect);
+    let day = (rel_pos.x / self.day_width) as i64;
+    if !(day >= 0 && day < self.day_count as i64) {
+      return None;
+    }
+
+    let vert_pos = rel_pos.y / self.content_height();
+    if !(vert_pos > 0.0 && vert_pos < 1.0) {
+      return None;
+    }
+
+    let seconds = SECS_PER_DAY as f32 * vert_pos;
+    let snapped_seconds =
+      (seconds / self.snapping_duration.num_seconds() as f32).round() as i64
+        * self.snapping_duration.num_seconds() as i64;
+
+    let date = self.first_day + Duration::days(day);
+    let time = date.and_hms(0, 0, 0) + Duration::seconds(snapped_seconds);
+    Some(time)
   }
 
   fn split_event_block_regions(&self, rect: Rect) -> [Rect; 3] {
