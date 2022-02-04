@@ -7,7 +7,6 @@ use eframe::egui::{
   Response, Sense, Ui, Vec2,
 };
 
-use itertools::Itertools;
 use layout::{Layout, LayoutAlgorithm};
 
 #[derive(Builder, Clone, Debug, PartialEq)]
@@ -58,27 +57,8 @@ pub struct ScheduleUi {
   #[builder(default = "\"%H:%M\"")]
   event_resizing_hint_format: &'static str,
 
-  #[builder(default, setter(skip))]
-  dragging_object: Option<DraggingObject>,
-
-  #[builder(default, setter(skip))]
-  temp_event: Option<EventBlock>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct DraggingObject {
-  object_type: DraggingObjectType,
-  dragging_id: egui::Id,
-  event: EventBlock,
-  event_rect: Rect,
-  first_interact_pos: Pos2,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum DraggingObjectType {
-  StartResizer,
-  EndResizer,
-  Mover,
+  #[builder(default)]
+  current_event: Option<EventBlock>,
 }
 
 type EventId = String;
@@ -133,25 +113,16 @@ fn one_day() -> Duration {
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events<'a, 'b: 'a>(&'b self, events: &'a [EventBlock]) -> Layout {
+  fn layout_events<'a>(&self, events: &'a [EventBlock]) -> Layout {
     let mut layout = Layout::default();
-
     for day in 0..self.day_count {
       // layout for each day
-      let mut events: Vec<layout::Ev<'a>> = events
+      let events: Vec<layout::Ev<'a>> = events
         .iter()
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
         .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
         .map(|e| (&e.id, e.start.timestamp(), e.end.timestamp()).into())
         .collect();
-
-      if let Some(tmp_e) = self.temp_event.as_ref() {
-        let ev: layout::Ev<'a> =
-          (&tmp_e.id, tmp_e.start.timestamp(), tmp_e.end.timestamp()).into();
-        events.insert(0, ev);
-      }
-
-      events.dedup_by_key(|x| x.id);
 
       layout.merge(layout::MarkusAlgorithm::compute(events))
     }
@@ -159,7 +130,7 @@ impl ScheduleUi {
   }
 
   fn add_event_block(
-    &mut self,
+    &self,
     ui: &mut Ui,
     event_block: &mut EventBlock,
     widget_rect: Rect,
@@ -172,8 +143,7 @@ impl ScheduleUi {
         let event_rect =
           self.layout_single_day_event(widget_rect, day, y, rel_x);
 
-        self.check_dragging(ui, event_block, event_rect, widget_rect);
-        self.paint_event_block(ui, event_block, event_rect, widget_rect)
+        self.put_event_block(ui, event_block, event_rect, widget_rect)
       }
       _ => unimplemented!(),
     }
@@ -203,130 +173,27 @@ impl ScheduleUi {
     rect.translate(self.content_offset(widget_rect))
   }
 
-  fn prepare_dragging(
+  fn put_event_block(
     &self,
     ui: &mut Ui,
-    id: egui::Id,
-    event: &EventBlock,
-    event_rect: Rect,
-  ) -> Option<DraggingObject> {
-    if self.dragging_object.is_some() {
-      return None;
-    }
-
-    if ui.memory().is_anything_being_dragged() {
-      return None;
-    }
-
-    let resizers = self.event_block_resizer_regions(event_rect);
-
-    drag_handle(
-      ui,
-      resizers[0],
-      id.with("upper_resizer"),
-      CursorIcon::ResizeVertical,
-      DraggingObjectType::StartResizer,
-    )
-    .or_else(|| {
-      drag_handle(
-        ui,
-        resizers[1],
-        id.with("lower_resizer"),
-        CursorIcon::ResizeVertical,
-        DraggingObjectType::EndResizer,
-      )
-    })
-    .or_else(|| {
-      drag_handle(
-        ui,
-        event_rect,
-        id.with("mover"),
-        CursorIcon::Grab,
-        DraggingObjectType::Mover,
-      )
-    })
-    .map(|(id, pos, typ)| DraggingObject {
-      dragging_id: id,
-      first_interact_pos: pos,
-      object_type: typ,
-      event: event.clone(),
-      event_rect,
-    })
-  }
-
-  fn update_dragging(&mut self, ui: &mut Ui, widget_rect: Rect) -> Option<()> {
-    let drag = self.dragging_object.as_ref()?;
-
-    if !ui.memory().is_being_dragged(drag.dragging_id) {
-      return None;
-    }
-
-    let pointer_pos = ui.input().pointer.interact_pos()?;
-    let pointer_time = if ui.input().modifiers.shift_only() {
-      // no snapping when shift is held down
-      self.pointer_pos_to_datetime(widget_rect, pointer_pos)?
-    } else {
-      // enable snapping otherwise
-      self.pointer_pos_to_datetime_snapping(widget_rect, pointer_pos)?
-    };
-
-    let mut temp_event = self.temp_event.take()?;
-
-    match drag.object_type {
-      DraggingObjectType::StartResizer => {
-        self.set_event_start(&mut temp_event, pointer_time);
-      }
-      DraggingObjectType::EndResizer => {
-        self.set_event_end(&mut temp_event, pointer_time);
-      }
-      DraggingObjectType::Mover => {
-        self.move_event(&mut temp_event, pointer_time)
-      }
-    }
-
-    self.temp_event = Some(temp_event);
-
-    None
-  }
-
-  fn check_dragging(
-    &mut self,
-    ui: &mut Ui,
-    event: &EventBlock,
-    event_rect: Rect,
-    widget_rect: Rect,
-  ) {
-    let id = egui::Id::new("event").with(&event.id).with("drag");
-
-    if let Some(drag) = self.prepare_dragging(ui, id, event, event_rect) {
-      self.dragging_object = Some(drag);
-      self.temp_event = Some(event.clone());
-    }
-
-    self.update_dragging(ui, widget_rect);
-  }
-
-  fn paint_event_block(
-    &self,
-    ui: &mut Ui,
-    event: &EventBlock,
+    event: &mut EventBlock,
     event_rect: Rect,
     widget_rect: Rect,
   ) -> Option<Response> {
     let event_rect = event_rect.shrink(1.0);
     let id = egui::Id::new("event").with(&event.id);
 
-    // if let Some(updated_event) =
-    //   self.event_mover(ui, id, event, event_rect, widget_rect)
-    // {
-    //   *event = updated_event;
-    // }
+    if let Some(updated_event) =
+      self.event_mover(ui, id, event, event_rect, widget_rect)
+    {
+      *event = updated_event;
+    }
 
-    // if let Some(updated_event) =
-    //   self.event_resizers(ui, id, event, event_rect, widget_rect)
-    // {
-    //   *event = updated_event;
-    // }
+    if let Some(updated_event) =
+      self.event_resizers(ui, id, event, event_rect, widget_rect)
+    {
+      *event = updated_event;
+    }
 
     let button = Button::new(event.title.clone()).fill(event.color);
     let button_resp = ui.put(event_rect, button);
@@ -500,12 +367,6 @@ impl ScheduleUi {
       event.start = new_start;
     }
     event.end = new_end;
-  }
-
-  fn move_event(&self, event: &mut EventBlock, mut new_start: DateTime<Local>) {
-    let duration = event.end - event.start;
-    event.start = new_start;
-    event.end = new_start + duration;
   }
 
   fn pointer_pos_to_datetime(
@@ -747,7 +608,6 @@ impl ScheduleUi {
 
     let layout = self.layout_events(events);
 
-    for events in self.apparent_events(events).iter() {}
     for event in events.iter_mut() {
       if let Some(event_response) =
         self.add_event_block(ui, event, rect, &layout)
@@ -758,40 +618,10 @@ impl ScheduleUi {
 
     response
   }
-
-  fn appearent_events<'a>(
-    &self,
-    events: &'a Vec<EventBlock>,
-  ) -> impl Iterator<Item = &EventBlock> + 'a {
-    self
-      .temp_event
-      .iter()
-      .chain(events.iter())
-      .unique_by(|x| x.id)
-  }
 }
 
 fn day_progress(datetime: &DateTime<Local>) -> f32 {
   let beginning_of_day = datetime.date().and_hms(0, 0, 0);
   let seconds_past_midnight = (*datetime - beginning_of_day).num_seconds();
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
-}
-
-fn drag_handle(
-  ui: &mut Ui,
-  rect: Rect,
-  id: egui::Id,
-  cursor: CursorIcon,
-  dragging_object_type: DraggingObjectType,
-) -> Option<(egui::Id, Pos2, DraggingObjectType)> {
-  let resp = ui
-    .interact(rect, id, Sense::drag())
-    .on_hover_cursor(CursorIcon::Grab);
-
-  if !resp.drag_started() {
-    return None;
-  }
-
-  let pos = ui.input().pointer.interact_pos()?;
-  Some((id, pos, dragging_object_type))
 }
