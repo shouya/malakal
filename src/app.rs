@@ -3,9 +3,9 @@ use eframe::{egui, epi};
 
 use crate::widget::{self, EventBlock};
 
-#[derive(Default)]
 pub struct App {
   events: Vec<EventBlock>,
+  schedule_ui: widget::ScheduleUi,
 }
 
 impl epi::App for App {
@@ -17,16 +17,23 @@ impl epi::App for App {
     egui::CentralPanel::default().show(ctx, |ui| {
       ui.heading("Hello!");
 
-      egui::ScrollArea::both().show(ui, |ui| {
-        let mut scheduler =
-          widget::ScheduleUiBuilder::default().build().unwrap();
-        scheduler.show(ui, &mut self.events)
-      })
+      egui::ScrollArea::both()
+        .show(ui, |ui| self.schedule_ui.show(ui, &mut self.events))
     });
   }
 }
 
 impl App {
+  pub fn new() -> Self {
+    let events = vec![];
+    let schedule_ui = widget::ScheduleUiBuilder::default().build().unwrap();
+
+    Self {
+      events,
+      schedule_ui,
+    }
+  }
+
   pub fn seed_sample_events(&mut self) {
     self.events.push(EventBlock {
       id: "1".into(),

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 type EventId = String;
 
 pub struct Ev<'a> {
-  id: &'a EventId,
+  pub id: &'a EventId,
   // span
   start: i64,
   end: i64,
@@ -19,7 +19,7 @@ impl<'a> From<(&'a EventId, i64, i64)> for Ev<'a> {
 
 #[derive(Default)]
 pub struct Layout {
-  // EventId => [left, right]
+  // EventId => [left, right, top, bottom]
   layout: HashMap<EventId, [f32; 2]>,
 }
 
