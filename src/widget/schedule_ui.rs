@@ -17,7 +17,7 @@ pub struct ScheduleUi {
   day_width: f32,
   #[builder(default = "24")]
   segment_count: usize,
-  #[builder(default = "60.0")]
+  #[builder(default = "80.0")]
   segment_height: f32,
   #[builder(default = "80.0")]
   time_marker_margin_width: f32,
@@ -177,7 +177,8 @@ impl ScheduleUi {
     event_rect: Rect,
     widget_rect: Rect,
   ) -> Option<Response> {
-    let event_rect = event_rect.shrink(1.0);
+    let event_rect =
+      event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
     let id = egui::Id::new("event").with(&event.id);
 
     if let Some(updated_event) =
@@ -339,34 +340,20 @@ impl ScheduleUi {
   fn set_event_start(
     &self,
     event: &mut EventBlock,
-    mut new_start: DateTime<Local>,
+    new_start: DateTime<Local>,
   ) {
-    if event.end <= new_start {
-      let mut new_end = new_start + self.min_event_duration;
-      if new_end.date() != event.end.date() {
-        let end_of_day = (event.end.date() + one_day()).and_hms(0, 0, 0);
-        new_end = end_of_day - Duration::seconds(1);
-        new_start = end_of_day - self.min_event_duration;
-      }
-      event.end = new_end;
+    if event.end < new_start + self.min_event_duration {
+      return;
     }
+
     event.start = new_start;
   }
 
-  fn set_event_end(
-    &self,
-    event: &mut EventBlock,
-    mut new_end: DateTime<Local>,
-  ) {
-    if new_end <= event.start {
-      let mut new_start = new_end - self.min_event_duration;
-      if new_start.date() != event.start.date() {
-        let beginning_of_day = event.start.date().and_hms(0, 0, 0);
-        new_start = beginning_of_day;
-        new_end = new_start + self.min_event_duration;
-      }
-      event.start = new_start;
+  fn set_event_end(&self, event: &mut EventBlock, new_end: DateTime<Local>) {
+    if new_end < event.start + self.min_event_duration {
+      return;
     }
+
     event.end = new_end;
   }
 
