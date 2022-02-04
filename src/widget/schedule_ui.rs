@@ -183,8 +183,11 @@ impl ScheduleUi {
     let event_rect = event_rect.shrink(1.0);
     let id = egui::Id::new("event").with(&event.id);
 
-    let button = Button::new(event.title.clone()).fill(event.color);
-    let button_resp = ui.put(event_rect, button);
+    if let Some(updated_event) =
+      self.event_mover(ui, id, event, event_rect, widget_rect)
+    {
+      *event = updated_event;
+    }
 
     if let Some(updated_event) =
       self.event_resizers(ui, id, event, event_rect, widget_rect)
@@ -192,7 +195,60 @@ impl ScheduleUi {
       *event = updated_event;
     }
 
+    let button = Button::new(event.title.clone()).fill(event.color);
+    let button_resp = ui.put(event_rect, button);
+
     Some(button_resp)
+  }
+
+  fn event_mover(
+    &self,
+    ui: &mut Ui,
+    id: egui::Id,
+    event: &EventBlock,
+    event_rect: Rect,
+    widget_rect: Rect,
+  ) -> Option<EventBlock> {
+    let id = id.with("mover");
+    let is_being_dragged = ui.memory().is_anything_being_dragged();
+
+    if !is_being_dragged {
+      let response = ui.interact(event_rect, id, Sense::drag());
+      if response.hovered() {
+        ui.output().cursor_icon = CursorIcon::Grab;
+      }
+
+      return None;
+    };
+
+    if !ui.memory().is_being_dragged(id) {
+      return None;
+    }
+
+    // dragging
+    ui.output().cursor_icon = CursorIcon::Grabbing;
+
+    let pointer_pos = ui.input().pointer.interact_pos()?;
+
+    let datetime = if ui.input().modifiers.shift_only() {
+      // no snapping when shift is held down
+      self.pointer_pos_to_datetime(widget_rect, pointer_pos)?
+    } else {
+      // enable snapping otherwise
+      self.pointer_pos_to_datetime_snapping(widget_rect, pointer_pos)?
+    };
+
+    let duration = event.end - event.start;
+    let mut changed_event = event.clone();
+
+    changed_event.start = datetime;
+    changed_event.end = datetime + duration;
+
+    let [upper_rect, lower_rect] = self.event_block_resizer_regions(event_rect);
+    self.show_resizer_hint(ui, upper_rect, changed_event.start);
+    self.show_resizer_hint(ui, lower_rect, changed_event.end);
+
+    Some(changed_event)
   }
 
   fn event_resizers(
@@ -206,9 +262,9 @@ impl ScheduleUi {
     let [upper_rect, lower_rect] = self.event_block_resizer_regions(event_rect);
 
     let upper_resizer =
-      self.draw_resizer(ui, id.with("res.upper"), widget_rect, upper_rect);
+      self.event_resizer(ui, id.with("res.upper"), widget_rect, upper_rect);
     let lower_resizer =
-      self.draw_resizer(ui, id.with("res.lower"), widget_rect, lower_rect);
+      self.event_resizer(ui, id.with("res.lower"), widget_rect, lower_rect);
 
     if let Some(t) = upper_resizer {
       let mut changed_event = event.clone();
@@ -217,6 +273,7 @@ impl ScheduleUi {
 
       return Some(changed_event);
     }
+
     if let Some(t) = lower_resizer {
       let mut changed_event = event.clone();
 
@@ -229,7 +286,7 @@ impl ScheduleUi {
     None
   }
 
-  fn draw_resizer(
+  fn event_resizer(
     &self,
     ui: &mut Ui,
     id: egui::Id,
