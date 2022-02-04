@@ -56,9 +56,6 @@ pub struct ScheduleUi {
 
   #[builder(default = "\"%H:%M\"")]
   event_resizing_hint_format: &'static str,
-
-  #[builder(default)]
-  current_event: Option<EventBlock>,
 }
 
 type EventId = String;
@@ -184,13 +181,13 @@ impl ScheduleUi {
     let id = egui::Id::new("event").with(&event.id);
 
     if let Some(updated_event) =
-      self.event_mover(ui, id, event, event_rect, widget_rect)
+      self.event_resizers(ui, id, event, event_rect, widget_rect)
     {
       *event = updated_event;
     }
 
     if let Some(updated_event) =
-      self.event_resizers(ui, id, event, event_rect, widget_rect)
+      self.event_mover(ui, id, event, event_rect, widget_rect)
     {
       *event = updated_event;
     }
@@ -210,25 +207,30 @@ impl ScheduleUi {
     widget_rect: Rect,
   ) -> Option<EventBlock> {
     let id = id.with("mover");
-    let is_being_dragged = ui.memory().is_anything_being_dragged();
+    let is_being_dragged = ui.memory().is_being_dragged(id);
 
     if !is_being_dragged {
-      let response = ui.interact(event_rect, id, Sense::drag());
-      if response.hovered() {
-        ui.output().cursor_icon = CursorIcon::Grab;
+      if ui.memory().is_anything_being_dragged() {
+        return None;
       }
+
+      let response = ui.interact(event_rect, id, Sense::drag());
+      if ui.output().cursor_icon == CursorIcon::Default {
+        // so it doesn't override resizer's cursor icon.
+        response.on_hover_cursor(CursorIcon::Grab);
+      }
+
+      let offset_y = event_rect.top() - ui.input().pointer.interact_pos()?.y;
+      ui.memory().data.insert_persisted(id, offset_y);
 
       return None;
     };
 
-    if !ui.memory().is_being_dragged(id) {
-      return None;
-    }
-
     // dragging
     ui.output().cursor_icon = CursorIcon::Grabbing;
 
-    let pointer_pos = ui.input().pointer.interact_pos()?;
+    let offset_y = ui.memory().data.get_persisted(id)?;
+    let pointer_pos = ui.input().pointer.interact_pos()? + vec2(0.0, offset_y);
 
     let datetime = if ui.input().modifiers.shift_only() {
       // no snapping when shift is held down
@@ -293,13 +295,12 @@ impl ScheduleUi {
     widget_rect: Rect,
     rect: Rect,
   ) -> Option<DateTime<Local>> {
-    if rect.area() == 0.0 {
-      return None;
-    }
-
     let is_being_dragged = ui.memory().is_being_dragged(id);
 
     if !is_being_dragged {
+      if ui.memory().is_anything_being_dragged() {
+        return None;
+      }
       let response = ui.interact(rect, id, Sense::drag());
       if response.hovered() {
         ui.output().cursor_icon = CursorIcon::ResizeVertical;
