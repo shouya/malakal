@@ -30,6 +30,11 @@ pub struct ScheduleUi {
   #[builder(default = "Local::today()")]
   first_day: Date<Local>,
 
+  // a small margin on the right of day columns reserved for creating
+  // new events
+  #[builder(default = "20.0")]
+  new_event_margin: f32,
+
   // used to render current time indicator
   #[builder(default = "Some(Local::now())")]
   current_time: Option<DateTime<Local>>,
@@ -38,8 +43,10 @@ pub struct ScheduleUi {
   #[builder(default = "std::time::Instant::now()", setter(skip))]
   last_update: std::time::Instant,
 
-  #[builder(default = "10.0")]
+  #[builder(default = "15.0")]
   resizer_height: f32,
+  #[builder(default = "20.0")]
+  resizer_width_margin: f32,
 
   #[builder(default = "Duration::minutes(15)")]
   min_event_duration: Duration,
@@ -144,17 +151,26 @@ impl ScheduleUi {
 
   fn layout_single_day_event(
     &self,
-    rect: Rect,
+    widget_rect: Rect,
     day: usize,
     y: [f32; 2],
-    relative_x: [f32; 2],
+    x: [f32; 2],
   ) -> Rect {
-    let x_offset = self.day_width * day as f32;
-    let x0 = x_offset + relative_x[0] * self.day_width;
-    let x1 = x_offset + relative_x[1] * self.day_width;
-    let y0 = y[0] * self.content_height();
-    let y1 = y[1] * self.content_height();
-    Rect::from_x_y_ranges(x0..=x1, y0..=y1).translate(self.content_offset(rect))
+    let mut rect = self.day_column(day);
+
+    // leave a margin for creating new events
+    rect.set_right(rect.right() - self.new_event_margin);
+
+    let w = rect.width();
+    let h = rect.height();
+
+    rect.set_right(rect.left() + x[1] * w);
+    rect.set_left(rect.left() + x[0] * w);
+
+    rect.set_bottom(rect.top() + y[1] * h);
+    rect.set_top(rect.top() + y[0] * h);
+
+    rect.translate(self.content_offset(widget_rect))
   }
 
   fn put_event_block(
@@ -170,7 +186,11 @@ impl ScheduleUi {
     let button = Button::new(event.title.clone()).fill(event.color);
     let button_resp = ui.put(event_rect, button);
 
-    self.event_resizers(ui, id, event, event_rect, widget_rect);
+    if let Some(updated_event) =
+      self.event_resizers(ui, id, event, event_rect, widget_rect)
+    {
+      *event = updated_event;
+    }
 
     Some(button_resp)
   }
@@ -179,44 +199,82 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     id: egui::Id,
-    event: &mut EventBlock,
+    event: &EventBlock,
     event_rect: Rect,
     widget_rect: Rect,
-  ) -> bool {
-    let [upper_resizer_rect, _main_rect, lower_resizer_rect] =
-      self.split_event_block_regions(event_rect);
+  ) -> Option<EventBlock> {
+    let [upper_rect, lower_rect] = self.event_block_resizer_regions(event_rect);
 
-    let upper_resizer = resizer(ui, id.with("res.upper"), upper_resizer_rect);
-    let lower_resizer = resizer(ui, id.with("res.lower"), lower_resizer_rect);
-    let pointer_to_datetime = move |ui: &Ui, pos| {
-      if ui.ctx().input().modifiers.shift_only() {
-        self.pointer_pos_to_datetime(widget_rect, pos)
-      } else {
-        self.pointer_pos_to_datetime_snapping(widget_rect, pos)
+    let upper_resizer =
+      self.draw_resizer(ui, id.with("res.upper"), widget_rect, upper_rect);
+    let lower_resizer =
+      self.draw_resizer(ui, id.with("res.lower"), widget_rect, lower_rect);
+
+    if let Some(t) = upper_resizer {
+      let mut changed_event = event.clone();
+      self.set_event_start(&mut changed_event, t);
+      self.show_resizer_hint(ui, upper_rect, changed_event.start);
+
+      return Some(changed_event);
+    }
+    if let Some(t) = lower_resizer {
+      let mut changed_event = event.clone();
+
+      self.set_event_end(&mut changed_event, t);
+      self.show_resizer_hint(ui, lower_rect, changed_event.end);
+
+      return Some(changed_event);
+    }
+
+    None
+  }
+
+  fn draw_resizer(
+    &self,
+    ui: &mut Ui,
+    id: egui::Id,
+    widget_rect: Rect,
+    rect: Rect,
+  ) -> Option<DateTime<Local>> {
+    if rect.area() == 0.0 {
+      return None;
+    }
+
+    let is_being_dragged = ui.memory().is_being_dragged(id);
+
+    if !is_being_dragged {
+      let response = ui.interact(rect, id, Sense::drag());
+      if response.hovered() {
+        ui.output().cursor_icon = CursorIcon::ResizeVertical;
       }
+
+      return None;
+    }
+
+    // dragging
+    ui.output().cursor_icon = CursorIcon::ResizeVertical;
+
+    let pointer_pos = ui.input().pointer.interact_pos()?;
+
+    let datetime = if ui.input().modifiers.shift_only() {
+      // no snapping when shift is held down
+      self.pointer_pos_to_datetime(widget_rect, pointer_pos)
+    } else {
+      // enable snapping otherwise
+      self.pointer_pos_to_datetime_snapping(widget_rect, pointer_pos)
     };
 
-    let mut changed = false;
+    datetime
+  }
 
-    if let Some(pointer_pos) = upper_resizer {
-      if let Some(t) = pointer_to_datetime(ui, pointer_pos) {
-        self.set_event_start(event, t);
-        let time = event.start.format(self.event_resizing_hint_format);
-        show_resizer_hint(ui, upper_resizer_rect, format!("{}", time));
+  fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime<Local>) {
+    let layer_id = egui::Id::new("resizer_hint");
+    let layer = LayerId::new(egui::Order::Tooltip, layer_id);
 
-        changed = true;
-      }
-    }
-    if let Some(pointer_pos) = lower_resizer {
-      if let Some(t) = pointer_to_datetime(ui, pointer_pos) {
-        self.set_event_end(event, t);
-        let time = event.end.format(self.event_resizing_hint_format);
-        show_resizer_hint(ui, lower_resizer_rect, format!("{}", time));
-        changed = true;
-      }
-    }
+    let text = format!("{}", time.format(self.event_resizing_hint_format));
+    let label = Label::new(egui::RichText::new(text).monospace());
 
-    changed
+    ui.with_layer_id(layer, |ui| ui.put(rect, label));
   }
 
   // squeeze event end if necessary
@@ -303,11 +361,11 @@ impl ScheduleUi {
     Some(time)
   }
 
-  fn split_event_block_regions(&self, rect: Rect) -> [Rect; 3] {
-    let mut upper_resizer = rect;
+  fn event_block_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
+    let mut upper_resizer = rect.shrink2(vec2(self.resizer_width_margin, 0.0));
     upper_resizer.set_height(self.resizer_height);
 
-    let mut lower_resizer = rect;
+    let mut lower_resizer = rect.shrink2(vec2(self.resizer_width_margin, 0.0));
     lower_resizer.set_top(rect.bottom() - self.resizer_height);
 
     if upper_resizer.intersects(lower_resizer) {
@@ -315,11 +373,7 @@ impl ScheduleUi {
       upper_resizer.set_height(0.0);
     }
 
-    let mut main = rect;
-    main.set_top(main.top() + upper_resizer.height());
-    main.set_bottom(main.bottom() - lower_resizer.height());
-
-    [upper_resizer, main, lower_resizer]
+    [upper_resizer, lower_resizer]
   }
 
   fn date_to_day(&self, date: Date<Local>) -> Option<usize> {
@@ -419,6 +473,16 @@ impl ScheduleUi {
     vec2(self.time_marker_margin_width, self.day_header_margin_height)
   }
 
+  fn day_column(&self, day: usize) -> Rect {
+    let x0 = self.day_width * day as f32;
+    let y0 = 0.0;
+
+    let w = self.day_width;
+    let h = self.content_height();
+
+    Rect::from_min_size(pos2(x0, y0), vec2(w, h))
+  }
+
   fn day_header_text(&self, nth_day: usize) -> Option<String> {
     if nth_day >= self.day_count {
       return None;
@@ -503,34 +567,4 @@ fn day_progress(datetime: &DateTime<Local>) -> f32 {
   let beginning_of_day = datetime.date().and_hms(0, 0, 0);
   let seconds_past_midnight = (*datetime - beginning_of_day).num_seconds();
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
-}
-
-fn resizer(ui: &mut Ui, id: egui::Id, rect: Rect) -> Option<Pos2> {
-  if rect.area() == 0.0 {
-    return None;
-  }
-
-  let is_being_dragged = ui.memory().is_being_dragged(id);
-
-  if !is_being_dragged {
-    let response = ui.interact(rect, id, Sense::drag());
-    if response.hovered() {
-      ui.output().cursor_icon = CursorIcon::ResizeVertical;
-    }
-  } else {
-    ui.output().cursor_icon = CursorIcon::ResizeVertical;
-
-    if let Some(pointer_pos) = ui.ctx().input().pointer.interact_pos() {
-      return Some(pointer_pos);
-    }
-  }
-
-  None
-}
-
-fn show_resizer_hint(ui: &mut Ui, rect: Rect, text: String) {
-  let layer_id = egui::Id::new("resizer_hint");
-  let layer = LayerId::new(egui::Order::Tooltip, layer_id);
-  let label = Label::new(egui::RichText::new(text).monospace());
-  ui.with_layer_id(layer, |ui| ui.put(rect, label));
 }
