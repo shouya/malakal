@@ -6,6 +6,7 @@ use eframe::egui::{
   self, pos2, vec2, Color32, CursorIcon, Label, LayerId, Pos2, Rect, Response,
   Sense, Ui, Vec2,
 };
+use uuid;
 
 use layout::{Layout, LayoutAlgorithm};
 
@@ -56,6 +57,9 @@ pub struct ScheduleUi {
 
   #[builder(default = "\"%H:%M\"")]
   event_resizing_hint_format: &'static str,
+
+  #[builder(default = "Color32::LIGHT_BLUE")]
+  new_event_color: Color32,
 }
 
 type EventId = String;
@@ -68,6 +72,7 @@ pub struct EventBlock {
   pub id: EventId,
   pub color: Color32,
   pub title: String,
+  pub updated_title: Option<String>,
   pub description: Option<String>,
   pub start: DateTime<Local>,
   pub end: DateTime<Local>,
@@ -378,7 +383,7 @@ impl ScheduleUi {
   ) -> Option<Response> {
     let event_rect =
       event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
-    let id = egui::Id::new("event").with(&event.id);
+    let id = event_id(&event);
 
     let interaction_state = self.event_interaction_state(id, ui);
 
@@ -686,21 +691,69 @@ impl ScheduleUi {
     )
   }
 
-  pub fn show(&mut self, ui: &mut Ui, events: &mut Vec<EventBlock>) {
-    ui.ctx().set_debug_on_hover(true);
+  pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<EventBlock>) {
+    parent_ui.ctx().set_debug_on_hover(true);
 
-    let (_id, rect) = ui.allocate_space(self.desired_size(ui));
+    let (id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
 
-    if ui.is_rect_visible(rect) {
-      self.draw_ticks(ui, rect);
+    if parent_ui.is_rect_visible(rect) {
+      self.draw_ticks(parent_ui, rect);
     }
+
+    let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
+
+    self.handle_new_event(&mut ui, events);
 
     let layout = self.layout_events(events);
 
+    let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
     for event in events.iter_mut() {
       if let Some(_event_response) =
-        self.add_event_block(ui, event, rect, &layout)
-      {}
+        self.add_event_block(&mut event_overlay_ui, event, rect, &layout)
+      {
+      }
+    }
+  }
+
+  fn handle_new_event(&self, ui: &mut Ui, events: &mut Vec<EventBlock>) {
+    let id = ui.make_persistent_id("empty_area");
+    let response = ui.interact(ui.max_rect(), id, Sense::drag());
+
+    if response.drag_started() {
+      let new_event = self.new_event(ui);
+      ui.memory()
+        .data
+        .insert_temp(event_id(&new_event), FocusedEventState::DraggingEventEnd);
+      ui.memory()
+        .data
+        .insert_temp(id.with("dragging"), new_event.clone());
+      events.push(new_event);
+    }
+
+    if response.drag_released() {
+      let event_opt = ui.memory().data.get_temp(id.with("dragging")).clone();
+      if let Some(event) = event_opt {
+        ui.memory()
+          .data
+          .insert_temp(event_id(&event), FocusedEventState::Editing);
+        ui.memory().data.remove::<EventBlock>(id.with("dragging"));
+      }
+    }
+  }
+
+  fn new_event(&self, ui: &Ui) -> EventBlock {
+    let id = format!("{}", uuid::Uuid::new_v4().to_hyphenated());
+    let mut pointer_pos = ui.input().pointer.interact_pos().unwrap();
+    pointer_pos -= self.content_offset(ui.max_rect());
+
+    let start = self.pointer_pos_to_datetime_snapping(pointer_pos).unwrap();
+    EventBlock {
+      color: self.new_event_color,
+      id,
+      title: "".into(),
+      description: None,
+      start,
+      end: start + self.min_event_duration,
     }
   }
 }
@@ -726,4 +779,8 @@ fn state_override(
   }
 
   old_state
+}
+
+fn event_id(event: &EventBlock) -> egui::Id {
+  egui::Id::new("event").with(&event.id)
 }
