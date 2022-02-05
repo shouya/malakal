@@ -105,7 +105,7 @@ impl EventBlock {
 
 const SECS_PER_DAY: u64 = 24 * 3600;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FocusedEventState {
   Editing,
   Dragging,
@@ -211,21 +211,16 @@ impl ScheduleUi {
 
   fn interact_event_region(
     &self,
-    id: egui::Id,
     ui: &mut Ui,
-    event_rect: Rect,
+    resp: Response,
   ) -> Option<FocusedEventState> {
-    let id = id.with("interact");
+    let event_rect = resp.rect;
     let [upper, lower] = self.event_block_resizer_regions(event_rect);
 
     let _lmb = egui::PointerButton::Primary;
 
-    let resp = ui.interact(event_rect, id, Sense::click_and_drag());
-    let interact_pos = ui.input().pointer.interact_pos()?;
-
-    if !resp.rect.contains(interact_pos) {
-      return None;
-    }
+    let interact_pos =
+      resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
 
     if upper.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
@@ -259,10 +254,10 @@ impl ScheduleUi {
       return None;
     }
 
-    unreachable!()
+    None
   }
 
-  // return true if the interaction is finished
+  // return None if the interaction is finished
   fn interact_event(
     &self,
     ui: &mut Ui,
@@ -270,31 +265,29 @@ impl ScheduleUi {
     widget_rect: Rect,
     state: FocusedEventState,
     event: &mut EventBlock,
-  ) -> bool {
+  ) -> Option<Response> {
     let [upper, lower] = self.event_block_resizer_regions(event_rect);
     let pointer_pos = if let Some(pos) = ui.input().pointer.interact_pos() {
       pos - self.content_offset(widget_rect)
     } else {
-      return false;
+      return None;
     };
 
-    match state {
+    let resp = self.place_event_button(ui, event_rect, event);
+    let active = match state {
       FocusedEventState::DraggingEventStart => {
-        self.paint_default_event(ui, event_rect, event);
         self.handle_event_resizing(ui, upper, pointer_pos, |time| {
           self.set_event_start(event, time);
           event.start
         })
       }
       FocusedEventState::DraggingEventEnd => {
-        self.paint_default_event(ui, event_rect, event);
         self.handle_event_resizing(ui, lower, pointer_pos, |time| {
           self.set_event_end(event, time);
           event.end
         })
       }
       FocusedEventState::Dragging => {
-        self.paint_default_event(ui, event_rect, event);
         self.handle_event_dragging(ui, event_rect, pointer_pos, |time| {
           let duration = event.end - event.start;
 
@@ -303,8 +296,9 @@ impl ScheduleUi {
           (event.start, event.end)
         })
       }
-      _ => unimplemented!(),
-    }
+      FocusedEventState::Editing => unreachable!(),
+    };
+    active.then(|| resp)
   }
 
   fn handle_event_resizing(
@@ -386,44 +380,61 @@ impl ScheduleUi {
       event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
     let id = egui::Id::new("event").with(&event.id);
 
-    let interaction_state = None
-      .or_else(|| self.event_interaction_state(id, ui))
-      .or_else(|| self.interact_event_region(id, ui, event_rect));
+    let interaction_state = self.event_interaction_state(id, ui);
 
     match interaction_state {
-      None => self.paint_default_event(ui, event_rect, event),
-      Some(state) => {
-        // returns false means the current event block is no longer
-        // interacting.
-        self.set_event_interaction_state(id, ui, Some(state));
-
-        if !self.interact_event(ui, event_rect, widget_rect, state, event) {
+      None => {
+        let resp = self.place_event_button(ui, event_rect, event);
+        if let Some(state) = self.interact_event_region(ui, resp) {
+          self.set_event_interaction_state(id, ui, Some(state));
+        }
+      }
+      Some(FocusedEventState::Editing) => {
+        if self.place_event_editor(ui, event_rect, event).is_none() {
           self.set_event_interaction_state(id, ui, None);
         }
       }
-    }
+      Some(state) => {
+        match self.interact_event(ui, event_rect, widget_rect, state, event) {
+          None => self.set_event_interaction_state(id, ui, None),
+          Some(resp) => {
+            if let Some(new_state) = self.interact_event_region(ui, resp) {
+              let final_state = state_override(state, new_state);
+              self.set_event_interaction_state(id, ui, Some(final_state));
+            }
+          }
+        }
+      }
+    };
 
     None
   }
 
-  fn paint_default_event(&self, ui: &mut Ui, rect: Rect, event: &EventBlock) {
-    let painter = ui.painter_at(rect);
-    let visuals = ui.style().noninteractive();
+  fn place_event_button(
+    &self,
+    ui: &mut Ui,
+    rect: Rect,
+    event: &EventBlock,
+  ) -> Response {
+    let button = egui::Button::new(&event.title).sense(Sense::click_and_drag());
+    ui.add_sized(rect.size(), button)
+  }
 
-    painter.rect(
-      rect,
-      visuals.corner_radius,
-      visuals.bg_fill,
-      visuals.bg_stroke,
-    );
+  fn place_event_editor(
+    &self,
+    ui: &mut Ui,
+    rect: Rect,
+    event: &mut EventBlock,
+  ) -> Option<()> {
+    let editor = egui::TextEdit::singleline(&mut event.title);
+    let resp = ui.add_sized(rect.size(), editor);
 
-    painter.text(
-      rect.center(),
-      egui::Align2::CENTER_CENTER,
-      &event.title,
-      egui::TextStyle::Body,
-      visuals.text_color(),
-    );
+    if resp.lost_focus() || resp.clicked_elsewhere() {
+      return None;
+    }
+
+    resp.request_focus();
+    Some(())
   }
 
   fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime<Local>) {
@@ -698,4 +709,21 @@ fn day_progress(datetime: &DateTime<Local>) -> f32 {
   let beginning_of_day = datetime.date().and_hms(0, 0, 0);
   let seconds_past_midnight = (*datetime - beginning_of_day).num_seconds();
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
+}
+
+// HACK: allow editing to override existing drag state, because it
+// seems that dragging always takes precedence.
+//
+// At the same time, do not allow resizing to be overridden by editing.
+fn state_override(
+  old_state: FocusedEventState,
+  new_state: FocusedEventState,
+) -> FocusedEventState {
+  if old_state == FocusedEventState::Dragging
+    && new_state == FocusedEventState::Editing
+  {
+    return new_state;
+  }
+
+  old_state
 }
