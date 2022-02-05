@@ -3,13 +3,11 @@ mod layout;
 use chrono::{Date, DateTime, Duration, Local};
 use derive_builder::Builder;
 use eframe::egui::{
-  self, pos2, vec2, Button, Color32, CursorIcon, Label, LayerId, Pos2, Rect,
-  Response, Sense, Ui, Vec2,
+  self, pos2, vec2, Color32, CursorIcon, Label, LayerId, Pos2, Rect, Response,
+  Sense, Ui, Vec2,
 };
 
 use layout::{Layout, LayoutAlgorithm};
-
-use super::EventButton;
 
 #[derive(Builder, Clone, Debug, PartialEq)]
 pub struct ScheduleUi {
@@ -62,6 +60,9 @@ pub struct ScheduleUi {
 
 type EventId = String;
 
+#[derive(Clone, Copy)]
+struct DraggingEventYOffset(f32);
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct EventBlock {
   pub id: EventId,
@@ -104,6 +105,14 @@ impl EventBlock {
 
 const SECS_PER_DAY: u64 = 24 * 3600;
 
+#[derive(Debug, Clone, Copy)]
+enum FocusedEventState {
+  Editing,
+  Dragging,
+  DraggingEventStart,
+  DraggingEventEnd,
+}
+
 // can't be a constant because chrono::Duration constructors are not
 // declared as const functions.
 fn one_day() -> Duration {
@@ -141,8 +150,15 @@ impl ScheduleUi {
         let day = self.date_to_day(date)?;
         let event_rect =
           self.layout_single_day_event(widget_rect, day, y, rel_x);
+        let mut child_ui =
+          ui.child_ui(event_rect, egui::Layout::left_to_right());
 
-        self.put_event_block(ui, event_block, event_rect, widget_rect)
+        self.put_event_block(
+          &mut child_ui,
+          event_block,
+          event_rect,
+          widget_rect,
+        )
       }
       _ => unimplemented!(),
     }
@@ -172,6 +188,193 @@ impl ScheduleUi {
     rect.translate(self.content_offset(widget_rect))
   }
 
+  fn event_interaction_state(
+    &self,
+    id: egui::Id,
+    ui: &mut Ui,
+  ) -> Option<FocusedEventState> {
+    ui.memory().data.get_temp(id)
+  }
+
+  fn set_event_interaction_state(
+    &self,
+    id: egui::Id,
+    ui: &mut Ui,
+    state: Option<FocusedEventState>,
+  ) {
+    if let Some(state) = state {
+      ui.memory().data.insert_temp(id, state);
+    } else {
+      ui.memory().data.remove::<FocusedEventState>(id);
+    }
+  }
+
+  fn interact_event_region(
+    &self,
+    id: egui::Id,
+    ui: &mut Ui,
+    event_rect: Rect,
+  ) -> Option<FocusedEventState> {
+    let id = id.with("interact");
+    let [upper, lower] = self.event_block_resizer_regions(event_rect);
+
+    let _lmb = egui::PointerButton::Primary;
+
+    let resp = ui.interact(event_rect, id, Sense::click_and_drag());
+    let interact_pos = ui.input().pointer.interact_pos()?;
+
+    if !resp.rect.contains(interact_pos) {
+      return None;
+    }
+
+    if upper.contains(interact_pos) {
+      ui.output().cursor_icon = CursorIcon::ResizeVertical;
+      if resp.drag_started() {
+        return Some(FocusedEventState::DraggingEventStart);
+      }
+      return None;
+    }
+
+    if lower.contains(interact_pos) {
+      ui.output().cursor_icon = CursorIcon::ResizeVertical;
+      if resp.drag_started() {
+        return Some(FocusedEventState::DraggingEventEnd);
+      }
+      return None;
+    }
+
+    if event_rect.contains(interact_pos) {
+      ui.output().cursor_icon = CursorIcon::Grab;
+
+      if resp.clicked() {
+        return Some(FocusedEventState::Editing);
+      }
+
+      if resp.drag_started() {
+        let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
+        ui.memory().data.insert_temp(egui::Id::null(), offset);
+        return Some(FocusedEventState::Dragging);
+      }
+
+      return None;
+    }
+
+    unreachable!()
+  }
+
+  // return true if the interaction is finished
+  fn interact_event(
+    &self,
+    ui: &mut Ui,
+    event_rect: Rect,
+    widget_rect: Rect,
+    state: FocusedEventState,
+    event: &mut EventBlock,
+  ) -> bool {
+    let [upper, lower] = self.event_block_resizer_regions(event_rect);
+    let pointer_pos = if let Some(pos) = ui.input().pointer.interact_pos() {
+      pos - self.content_offset(widget_rect)
+    } else {
+      return false;
+    };
+
+    match state {
+      FocusedEventState::DraggingEventStart => {
+        self.paint_default_event(ui, event_rect, event);
+        self.handle_event_resizing(ui, upper, pointer_pos, |time| {
+          self.set_event_start(event, time);
+          event.start
+        })
+      }
+      FocusedEventState::DraggingEventEnd => {
+        self.paint_default_event(ui, event_rect, event);
+        self.handle_event_resizing(ui, lower, pointer_pos, |time| {
+          self.set_event_end(event, time);
+          event.end
+        })
+      }
+      FocusedEventState::Dragging => {
+        self.paint_default_event(ui, event_rect, event);
+        self.handle_event_dragging(ui, event_rect, pointer_pos, |time| {
+          let duration = event.end - event.start;
+
+          event.start = time;
+          event.end = time + duration;
+          (event.start, event.end)
+        })
+      }
+      _ => unimplemented!(),
+    }
+  }
+
+  fn handle_event_resizing(
+    &self,
+    ui: &mut Ui,
+    rect: Rect,
+    pointer_pos: Pos2,
+    set_time: impl FnOnce(DateTime<Local>) -> DateTime<Local>,
+  ) -> bool {
+    if !ui.memory().is_anything_being_dragged() {
+      return false;
+    }
+
+    ui.output().cursor_icon = CursorIcon::ResizeVertical;
+
+    let datetime_opt = if ui.input().modifiers.shift_only() {
+      // no snapping when shift is held down
+      self.pointer_pos_to_datetime(pointer_pos)
+    } else {
+      // enable snapping otherwise
+      self.pointer_pos_to_datetime_snapping(pointer_pos)
+    };
+
+    if let Some(datetime) = datetime_opt {
+      let updated_time = set_time(datetime);
+      self.show_resizer_hint(ui, rect, updated_time);
+    }
+
+    true
+  }
+
+  fn handle_event_dragging(
+    &self,
+    ui: &mut Ui,
+    rect: Rect,
+    mut pointer_pos: Pos2,
+    set_time: impl FnOnce(DateTime<Local>) -> (DateTime<Local>, DateTime<Local>),
+  ) -> bool {
+    if !ui.memory().is_anything_being_dragged() {
+      return false;
+    }
+
+    ui.output().cursor_icon = CursorIcon::Grabbing;
+
+    if let Some(offset_y) = ui
+      .memory()
+      .data
+      .get_temp::<DraggingEventYOffset>(egui::Id::null())
+    {
+      pointer_pos.y += offset_y.0;
+    }
+
+    let datetime_opt = if ui.input().modifiers.shift_only() {
+      // no snapping when shift is held down
+      self.pointer_pos_to_datetime(pointer_pos)
+    } else {
+      // enable snapping otherwise
+      self.pointer_pos_to_datetime_snapping(pointer_pos)
+    };
+
+    if let Some(datetime) = datetime_opt {
+      let (beg, end) = set_time(datetime);
+      let [upper, lower] = self.event_block_resizer_regions(rect);
+      self.show_resizer_hint(ui, upper, beg);
+      self.show_resizer_hint(ui, lower, end);
+    }
+
+    true
+  }
+
   fn put_event_block(
     &self,
     ui: &mut Ui,
@@ -183,150 +386,44 @@ impl ScheduleUi {
       event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
     let id = egui::Id::new("event").with(&event.id);
 
-    if let Some(updated_event) =
-      self.event_resizers(ui, id, event, event_rect, widget_rect)
-    {
-      *event = updated_event;
-    }
+    let interaction_state = None
+      .or_else(|| self.event_interaction_state(id, ui))
+      .or_else(|| self.interact_event_region(id, ui, event_rect));
 
-    if let Some(updated_event) =
-      self.event_mover(ui, id, event, event_rect, widget_rect)
-    {
-      *event = updated_event;
-    }
+    match interaction_state {
+      None => self.paint_default_event(ui, event_rect, event),
+      Some(state) => {
+        // returns false means the current event block is no longer
+        // interacting.
+        self.set_event_interaction_state(id, ui, Some(state));
 
-    let button = EventButton::default();
-    button.show(ui, event_rect, event);
-
-    None
-  }
-
-  fn event_mover(
-    &self,
-    ui: &mut Ui,
-    id: egui::Id,
-    event: &EventBlock,
-    event_rect: Rect,
-    widget_rect: Rect,
-  ) -> Option<EventBlock> {
-    let id = id.with("mover");
-    let is_being_dragged = ui.memory().is_being_dragged(id);
-
-    if !is_being_dragged {
-      if ui.memory().is_anything_being_dragged() {
-        return None;
+        if !self.interact_event(ui, event_rect, widget_rect, state, event) {
+          self.set_event_interaction_state(id, ui, None);
+        }
       }
-
-      let response = ui.interact(event_rect, id, Sense::drag());
-      if ui.output().cursor_icon == CursorIcon::Default {
-        // so it doesn't override resizer's cursor icon.
-        response.on_hover_cursor(CursorIcon::Grab);
-      }
-
-      let offset_y = event_rect.top() - ui.input().pointer.interact_pos()?.y;
-      ui.memory().data.insert_temp(id, offset_y);
-
-      return None;
-    };
-
-    // dragging
-    ui.output().cursor_icon = CursorIcon::Grabbing;
-
-    let offset_y = ui.memory().data.get_temp(id)?;
-    let pointer_pos = ui.input().pointer.interact_pos()? + vec2(0.0, offset_y);
-
-    let datetime = if ui.input().modifiers.shift_only() {
-      // no snapping when shift is held down
-      self.pointer_pos_to_datetime(widget_rect, pointer_pos)?
-    } else {
-      // enable snapping otherwise
-      self.pointer_pos_to_datetime_snapping(widget_rect, pointer_pos)?
-    };
-
-    let duration = event.end - event.start;
-    let mut changed_event = event.clone();
-
-    changed_event.start = datetime;
-    changed_event.end = datetime + duration;
-
-    let [upper_rect, lower_rect] = self.event_block_resizer_regions(event_rect);
-    self.show_resizer_hint(ui, upper_rect, changed_event.start);
-    self.show_resizer_hint(ui, lower_rect, changed_event.end);
-
-    Some(changed_event)
-  }
-
-  fn event_resizers(
-    &self,
-    ui: &mut Ui,
-    id: egui::Id,
-    event: &EventBlock,
-    event_rect: Rect,
-    widget_rect: Rect,
-  ) -> Option<EventBlock> {
-    let [upper_rect, lower_rect] = self.event_block_resizer_regions(event_rect);
-
-    let upper_resizer =
-      self.event_resizer(ui, id.with("res.upper"), widget_rect, upper_rect);
-    let lower_resizer =
-      self.event_resizer(ui, id.with("res.lower"), widget_rect, lower_rect);
-
-    if let Some(t) = upper_resizer {
-      let mut changed_event = event.clone();
-      self.set_event_start(&mut changed_event, t);
-      self.show_resizer_hint(ui, upper_rect, changed_event.start);
-
-      return Some(changed_event);
-    }
-
-    if let Some(t) = lower_resizer {
-      let mut changed_event = event.clone();
-
-      self.set_event_end(&mut changed_event, t);
-      self.show_resizer_hint(ui, lower_rect, changed_event.end);
-
-      return Some(changed_event);
     }
 
     None
   }
 
-  fn event_resizer(
-    &self,
-    ui: &mut Ui,
-    id: egui::Id,
-    widget_rect: Rect,
-    rect: Rect,
-  ) -> Option<DateTime<Local>> {
-    let is_being_dragged = ui.memory().is_being_dragged(id);
+  fn paint_default_event(&self, ui: &mut Ui, rect: Rect, event: &EventBlock) {
+    let painter = ui.painter_at(rect);
+    let visuals = ui.style().noninteractive();
 
-    if !is_being_dragged {
-      if ui.memory().is_anything_being_dragged() {
-        return None;
-      }
-      let response = ui.interact(rect, id, Sense::drag());
-      if ui.output().cursor_icon == CursorIcon::Default {
-        // so it doesn't override resizer's cursor icon.
-        response.on_hover_cursor(CursorIcon::ResizeVertical);
-      }
+    painter.rect(
+      rect,
+      visuals.corner_radius,
+      visuals.bg_fill,
+      visuals.bg_stroke,
+    );
 
-      return None;
-    }
-
-    // dragging
-    ui.output().cursor_icon = CursorIcon::ResizeVertical;
-
-    let pointer_pos = ui.input().pointer.interact_pos()?;
-
-    let datetime = if ui.input().modifiers.shift_only() {
-      // no snapping when shift is held down
-      self.pointer_pos_to_datetime(widget_rect, pointer_pos)
-    } else {
-      // enable snapping otherwise
-      self.pointer_pos_to_datetime_snapping(widget_rect, pointer_pos)
-    };
-
-    datetime
+    painter.text(
+      rect.center(),
+      egui::Align2::CENTER_CENTER,
+      &event.title,
+      egui::TextStyle::Body,
+      visuals.text_color(),
+    );
   }
 
   fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime<Local>) {
@@ -360,12 +457,7 @@ impl ScheduleUi {
     event.end = new_end;
   }
 
-  fn pointer_pos_to_datetime(
-    &self,
-    widget_rect: Rect,
-    pointer_pos: Pos2,
-  ) -> Option<DateTime<Local>> {
-    let rel_pos = pointer_pos - self.content_offset(widget_rect);
+  fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime<Local>> {
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -385,10 +477,8 @@ impl ScheduleUi {
 
   fn pointer_pos_to_datetime_snapping(
     &self,
-    widget_rect: Rect,
-    pointer_pos: Pos2,
+    rel_pos: Pos2,
   ) -> Option<DateTime<Local>> {
-    let rel_pos = pointer_pos - self.content_offset(widget_rect);
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -585,13 +675,10 @@ impl ScheduleUi {
     )
   }
 
-  pub fn show(
-    &mut self,
-    ui: &mut Ui,
-    events: &mut Vec<EventBlock>,
-  ) -> Response {
-    let (rect, mut response) =
-      ui.allocate_exact_size(self.desired_size(ui), egui::Sense::hover());
+  pub fn show(&mut self, ui: &mut Ui, events: &mut Vec<EventBlock>) {
+    ui.ctx().set_debug_on_hover(true);
+
+    let (_id, rect) = ui.allocate_space(self.desired_size(ui));
 
     if ui.is_rect_visible(rect) {
       self.draw_ticks(ui, rect);
@@ -600,14 +687,10 @@ impl ScheduleUi {
     let layout = self.layout_events(events);
 
     for event in events.iter_mut() {
-      if let Some(event_response) =
+      if let Some(_event_response) =
         self.add_event_block(ui, event, rect, &layout)
-      {
-        response = response.union(event_response);
-      }
+      {}
     }
-
-    response
   }
 }
 

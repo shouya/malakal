@@ -1,6 +1,5 @@
-use eframe::egui::{
-  Button, Id, Label, PointerButton, Rect, Sense, TextEdit, Ui,
-};
+#![allow(unused)]
+use eframe::egui::{self, Button, Id, PointerButton, Rect, TextEdit, Ui};
 
 use crate::widget::EventBlock;
 
@@ -44,10 +43,9 @@ impl EventButton {
     event: &mut EventBlock,
     id: Id,
   ) {
-    let button = Button::new(&event.title);
+    let button = Button::new(&event.title).sense(egui::Sense::hover());
     let response = ui.put(rect, button);
     if response.clicked_by(PointerButton::Primary) {
-      dbg!(111);
       ui.memory().data.insert_temp(id, EditingEvent);
     }
   }
