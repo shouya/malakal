@@ -9,6 +9,8 @@ use eframe::egui::{
 
 use layout::{Layout, LayoutAlgorithm};
 
+use super::EventButton;
+
 #[derive(Builder, Clone, Debug, PartialEq)]
 pub struct ScheduleUi {
   #[builder(default = "3")]
@@ -193,10 +195,10 @@ impl ScheduleUi {
       *event = updated_event;
     }
 
-    let button = Button::new(event.title.clone()).fill(event.color);
-    let button_resp = ui.put(event_rect, button);
+    let button = EventButton::default();
+    button.show(ui, event_rect, event);
 
-    Some(button_resp)
+    None
   }
 
   fn event_mover(
@@ -222,7 +224,7 @@ impl ScheduleUi {
       }
 
       let offset_y = event_rect.top() - ui.input().pointer.interact_pos()?.y;
-      ui.memory().data.insert_persisted(id, offset_y);
+      ui.memory().data.insert_temp(id, offset_y);
 
       return None;
     };
@@ -230,7 +232,7 @@ impl ScheduleUi {
     // dragging
     ui.output().cursor_icon = CursorIcon::Grabbing;
 
-    let offset_y = ui.memory().data.get_persisted(id)?;
+    let offset_y = ui.memory().data.get_temp(id)?;
     let pointer_pos = ui.input().pointer.interact_pos()? + vec2(0.0, offset_y);
 
     let datetime = if ui.input().modifiers.shift_only() {
@@ -303,8 +305,9 @@ impl ScheduleUi {
         return None;
       }
       let response = ui.interact(rect, id, Sense::drag());
-      if response.hovered() {
-        ui.output().cursor_icon = CursorIcon::ResizeVertical;
+      if ui.output().cursor_icon == CursorIcon::Default {
+        // so it doesn't override resizer's cursor icon.
+        response.on_hover_cursor(CursorIcon::ResizeVertical);
       }
 
       return None;
