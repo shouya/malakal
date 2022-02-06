@@ -282,22 +282,19 @@ impl ScheduleUi {
     let active = match state {
       FocusedEventState::DraggingEventStart => {
         self.handle_event_resizing(ui, upper, pointer_pos, |time| {
-          self.set_event_start(event, time);
+          self.move_event_start(event, time);
           event.start
         })
       }
       FocusedEventState::DraggingEventEnd => {
         self.handle_event_resizing(ui, lower, pointer_pos, |time| {
-          self.set_event_end(event, time);
+          self.move_event_end(event, time);
           event.end
         })
       }
       FocusedEventState::Dragging => {
         self.handle_event_dragging(ui, event_rect, pointer_pos, |time| {
-          let duration = event.end - event.start;
-
-          event.start = time;
-          event.end = time + duration;
+          self.move_event(event, time);
           (event.start, event.end)
         })
       }
@@ -452,8 +449,12 @@ impl ScheduleUi {
     ui.with_layer_id(layer, |ui| ui.put(rect, label));
   }
 
-  // squeeze event end if necessary
-  fn set_event_start(
+  // These move_event_{start,end} functions aim to enforce few constraints:
+  //
+  // 1. event end must be later than event start
+  // 2. event duration must be at least self.min_event_duration long
+  // 3. event date can't be changed
+  fn move_event_start(
     &self,
     event: &mut EventBlock,
     new_start: DateTime<Local>,
@@ -462,14 +463,34 @@ impl ScheduleUi {
       return;
     }
 
+    if !on_the_same_day(event.start, new_start) {
+      return;
+    }
+
     event.start = new_start;
   }
 
-  fn set_event_end(&self, event: &mut EventBlock, new_end: DateTime<Local>) {
+  fn move_event_end(&self, event: &mut EventBlock, new_end: DateTime<Local>) {
     if new_end < event.start + self.min_event_duration {
       return;
     }
 
+    if !on_the_same_day(event.end, new_end) {
+      return;
+    }
+
+    event.end = new_end;
+  }
+
+  fn move_event(&self, event: &mut EventBlock, new_start: DateTime<Local>) {
+    let duration = event.end - event.start;
+    let new_end = new_start + duration;
+
+    if !on_the_same_day(new_start, new_end) {
+      return;
+    }
+
+    event.start = new_start;
     event.end = new_end;
   }
 
@@ -787,4 +808,21 @@ fn event_id(event: &EventBlock) -> egui::Id {
 
 fn new_event_id() -> EventId {
   format!("{}", Uuid::new_v4().to_hyphenated())
+}
+
+fn on_the_same_day(mut t1: DateTime<Local>, mut t2: DateTime<Local>) -> bool {
+  if t1.date() == t2.date() {
+    return true;
+  }
+
+  if t2 < t1 {
+    std::mem::swap(&mut t1, &mut t2);
+  }
+
+  if (t1.date() + one_day()).and_hms(0, 0, 0) == t2 {
+    // to midnight
+    return true;
+  }
+
+  false
 }
