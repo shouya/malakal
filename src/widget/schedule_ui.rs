@@ -411,14 +411,21 @@ impl ScheduleUi {
       egui::TextEdit::singleline(event.updated_title.as_mut().unwrap());
     let resp = ui.put(rect, editor);
 
-    let something_dragging = ui.memory().is_anything_being_dragged();
+    // Anything dragging outside the textedit should be equivalent to
+    // losing focus. Note: we still need to allow dragging within the
+    // textedit widget to allow text selection, etc.
+    let anything_else_dragging = ui.memory().is_anything_being_dragged()
+      && !resp.dragged()
+      && !resp.drag_released();
 
-    if ui.input().key_released(egui::Key::Escape) {
+    // We cannot use key_released here, because it will be taken
+    // precedence by resp.lost_focus() and commit the change.
+    if ui.input().key_pressed(egui::Key::Escape) {
       event.updated_title.take();
       return None;
     }
 
-    if resp.lost_focus() || resp.clicked_elsewhere() || something_dragging {
+    if resp.lost_focus() || resp.clicked_elsewhere() || anything_else_dragging {
       if !event.updated_title.as_ref().unwrap().is_empty() {
         event.title = event.updated_title.take().unwrap();
       } else {
