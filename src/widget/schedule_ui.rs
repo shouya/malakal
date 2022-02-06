@@ -64,7 +64,7 @@ pub struct ScheduleUi {
 
 type EventId = String;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct DraggingEventYOffset(f32);
 
 #[derive(Debug, PartialEq, Clone)]
@@ -134,7 +134,14 @@ impl ScheduleUi {
         .iter()
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
         .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
-        .map(|e| (&e.id, e.start.timestamp(), e.end.timestamp()).into())
+        .map(|e| {
+          if e.end - e.start < self.min_event_duration {
+            let end = e.start + self.min_event_duration;
+            (&e.id, e.start.timestamp(), end.timestamp()).into()
+          } else {
+            (&e.id, e.start.timestamp(), e.end.timestamp()).into()
+          }
+        })
         .collect();
 
       layout.merge(layout::MarkusAlgorithm::compute(events))
@@ -146,16 +153,16 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     event_block: &mut EventBlock,
-    widget_rect: Rect,
     layout: &Layout,
   ) -> Option<Response> {
+    let widget_rect = ui.max_rect();
     match event_block.layout_type() {
       EventBlockType::Single(date, y) => {
         let rel_x = layout.query(&event_block.id)?;
         let day = self.date_to_day(date)?;
         let event_rect =
           self.layout_single_day_event(widget_rect, day, y, rel_x);
-        self.put_event_block(ui, event_block, event_rect, widget_rect)
+        self.put_event_block(ui, event_block, event_rect)
       }
       _ => unimplemented!(),
     }
@@ -259,16 +266,10 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     event_rect: Rect,
-    widget_rect: Rect,
     state: FocusedEventState,
     event: &mut EventBlock,
   ) -> Option<Response> {
     let [upper, lower] = self.event_block_resizer_regions(event_rect);
-    let pointer_pos = if let Some(pos) = ui.input().pointer.interact_pos() {
-      pos - self.content_offset(widget_rect)
-    } else {
-      return None;
-    };
 
     let resp = self.place_event_button(ui, event_rect, event);
     let active = match state {
@@ -285,13 +286,14 @@ impl ScheduleUi {
         })
       }
       FocusedEventState::Dragging => {
-        self.handle_event_dragging(ui, event_rect, pointer_pos, |time| {
+        self.handle_event_dragging(ui, event_rect, |time| {
           self.move_event(event, time);
           (event.start, event.end)
         })
       }
       FocusedEventState::Editing => unreachable!(),
     };
+
     active.then(|| resp)
   }
 
@@ -307,7 +309,8 @@ impl ScheduleUi {
 
     ui.output().cursor_icon = CursorIcon::ResizeVertical;
 
-    if let Some(datetime) = self.pointer_to_datetime_auto(ui) {
+    let pointer_pos = self.relative_pointer_pos(ui).unwrap();
+    if let Some(datetime) = self.pointer_to_datetime_auto(ui, pointer_pos) {
       let updated_time = set_time(datetime);
       self.show_resizer_hint(ui, rect, updated_time);
     }
@@ -319,7 +322,6 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    mut pointer_pos: Pos2,
     set_time: impl FnOnce(DateTime<Local>) -> (DateTime<Local>, DateTime<Local>),
   ) -> bool {
     if !ui.memory().is_anything_being_dragged() {
@@ -328,6 +330,7 @@ impl ScheduleUi {
 
     ui.output().cursor_icon = CursorIcon::Grabbing;
 
+    let mut pointer_pos = self.relative_pointer_pos(ui).unwrap();
     if let Some(offset_y) = ui
       .memory()
       .data
@@ -336,7 +339,7 @@ impl ScheduleUi {
       pointer_pos.y += offset_y.0;
     }
 
-    if let Some(datetime) = self.pointer_to_datetime_auto(ui) {
+    if let Some(datetime) = self.pointer_to_datetime_auto(ui, pointer_pos) {
       let (beg, end) = set_time(datetime);
       let [upper, lower] = self.event_block_resizer_regions(rect);
       self.show_resizer_hint(ui, upper, beg);
@@ -351,7 +354,6 @@ impl ScheduleUi {
     ui: &mut Ui,
     event: &mut EventBlock,
     event_rect: Rect,
-    widget_rect: Rect,
   ) -> Option<Response> {
     let event_rect =
       event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
@@ -371,17 +373,15 @@ impl ScheduleUi {
           self.set_event_interaction_state(id, ui, None);
         }
       }
-      Some(state) => {
-        match self.interact_event(ui, event_rect, widget_rect, state, event) {
-          None => self.set_event_interaction_state(id, ui, None),
-          Some(resp) => {
-            if let Some(new_state) = self.interact_event_region(ui, resp) {
-              let final_state = state_override(state, new_state);
-              self.set_event_interaction_state(id, ui, Some(final_state));
-            }
+      Some(state) => match self.interact_event(ui, event_rect, state, event) {
+        None => self.set_event_interaction_state(id, ui, None),
+        Some(resp) => {
+          if let Some(new_state) = self.interact_event_region(ui, resp) {
+            let final_state = state_override(state, new_state);
+            self.set_event_interaction_state(id, ui, Some(final_state));
           }
         }
-      }
+      },
     };
 
     None
@@ -403,12 +403,27 @@ impl ScheduleUi {
     rect: Rect,
     event: &mut EventBlock,
   ) -> Option<()> {
-    let editor = egui::TextEdit::singleline(&mut event.title);
+    event
+      .updated_title
+      .get_or_insert_with(|| event.title.clone());
+
+    let editor =
+      egui::TextEdit::singleline(event.updated_title.as_mut().unwrap());
     let resp = ui.put(rect, editor);
 
     let something_dragging = ui.memory().is_anything_being_dragged();
 
+    if ui.input().key_released(egui::Key::Escape) {
+      event.updated_title.take();
+      return None;
+    }
+
     if resp.lost_focus() || resp.clicked_elsewhere() || something_dragging {
+      if !event.updated_title.as_ref().unwrap().is_empty() {
+        event.title = event.updated_title.take().unwrap();
+      } else {
+        event.updated_title.take();
+      }
       return None;
     }
 
@@ -440,7 +455,7 @@ impl ScheduleUi {
       return;
     }
 
-    if !on_the_same_day(event.start, new_start) {
+    if !on_the_same_day(new_start, event.end) {
       return;
     }
 
@@ -452,7 +467,7 @@ impl ScheduleUi {
       return;
     }
 
-    if !on_the_same_day(event.end, new_end) {
+    if !on_the_same_day(event.start, new_end) {
       return;
     }
 
@@ -499,14 +514,20 @@ impl ScheduleUi {
     }
 
     let vert_pos = rel_pos.y / self.content_height();
-    if !(vert_pos > 0.0 && vert_pos < 1.0) {
+    if vert_pos < 0.0 {
+      // Note: we must allow vert_pos to exceed 1.0, otherwise we
+      // can't snap to the end of day.
       return None;
     }
 
     let seconds = SECS_PER_DAY as f32 * vert_pos;
-    let snapped_seconds =
+    let mut snapped_seconds =
       (seconds / self.snapping_duration.num_seconds() as f32).floor() as i64
         * self.snapping_duration.num_seconds() as i64;
+
+    if snapped_seconds > SECS_PER_DAY as i64 {
+      snapped_seconds = SECS_PER_DAY as i64;
+    }
 
     let date = self.first_day + Duration::days(day);
     let time = date.and_hms(0, 0, 0) + Duration::seconds(snapped_seconds);
@@ -705,12 +726,13 @@ impl ScheduleUi {
     let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
     for event in events.iter_mut() {
       if let Some(_event_response) =
-        self.add_event_block(&mut event_overlay_ui, event, rect, &layout)
-      {
-      }
+        self.add_event_block(&mut event_overlay_ui, event, &layout)
+      {}
     }
 
     self.handle_new_event(&mut ui, events);
+
+    remove_empty_events(events);
   }
 
   fn handle_new_event(
@@ -725,7 +747,8 @@ impl ScheduleUi {
 
     if response.drag_started() {
       let mut event = self.new_event();
-      let init_time = self.pointer_to_datetime_auto(ui)?;
+      let pointer_pos = self.relative_pointer_pos(ui)?;
+      let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
 
       self.assign_new_event_dates(ui, init_time, &mut event)?;
 
@@ -763,22 +786,24 @@ impl ScheduleUi {
       color: self.new_event_color,
       id: new_event_id(),
       title: "".into(),
-      updated_title: None,
+      updated_title: Some("".into()),
       description: None,
       start: self.first_day.and_hms(0, 0, 0),
       end: self.first_day.and_hms(0, 0, 0) + self.min_event_duration,
     }
   }
 
-  fn pointer_to_datetime_auto(&self, ui: &Ui) -> Option<DateTime<Local>> {
-    let pointer_pos = self.relative_pointer_pos(ui)?;
-
+  fn pointer_to_datetime_auto(
+    &self,
+    ui: &Ui,
+    pos: Pos2,
+  ) -> Option<DateTime<Local>> {
     if ui.input().modifiers.shift_only() {
       // no snapping when shift is held down
-      self.pointer_pos_to_datetime(pointer_pos)
+      self.pointer_pos_to_datetime(pos)
     } else {
       // enable snapping otherwise
-      self.pointer_pos_to_datetime_snapping(pointer_pos)
+      self.pointer_pos_to_datetime_snapping(pos)
     }
   }
 
@@ -800,7 +825,8 @@ impl ScheduleUi {
   ) -> Option<FocusedEventState> {
     use FocusedEventState::{DraggingEventEnd, DraggingEventStart};
 
-    let new_time = self.pointer_to_datetime_auto(ui)?;
+    let pointer_pos = self.relative_pointer_pos(ui)?;
+    let new_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
 
     let (mut start, mut end) = (init_time, new_time);
     let reordered = reorder_times(&mut start, &mut end);
@@ -890,4 +916,9 @@ fn find_event_mut<'a>(
   id: &EventId,
 ) -> Option<&'a mut EventBlock> {
   events.iter_mut().find(|x| x.id == *id)
+}
+
+fn remove_empty_events(events: &mut Vec<EventBlock>) {
+  // events whose title are empty and is not been editing should be deleted.
+  events.retain(|e| !(e.title.is_empty() && e.updated_title.is_none()))
 }
