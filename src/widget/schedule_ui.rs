@@ -6,7 +6,7 @@ use eframe::egui::{
   self, pos2, vec2, Color32, CursorIcon, Label, LayerId, Pos2, Rect, Response,
   Sense, Ui, Vec2,
 };
-use uuid;
+use uuid::Uuid;
 
 use layout::{Layout, LayoutAlgorithm};
 
@@ -383,7 +383,7 @@ impl ScheduleUi {
   ) -> Option<Response> {
     let event_rect =
       event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
-    let id = event_id(&event);
+    let id = event_id(event);
 
     let interaction_state = self.event_interaction_state(id, ui);
 
@@ -694,15 +694,13 @@ impl ScheduleUi {
   pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<EventBlock>) {
     parent_ui.ctx().set_debug_on_hover(true);
 
-    let (id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
+    let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
 
     if parent_ui.is_rect_visible(rect) {
       self.draw_ticks(parent_ui, rect);
     }
 
     let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
-
-    self.handle_new_event(&mut ui, events);
 
     let layout = self.layout_events(events);
 
@@ -713,6 +711,8 @@ impl ScheduleUi {
       {
       }
     }
+
+    self.handle_new_event(&mut ui, events);
   }
 
   fn handle_new_event(&self, ui: &mut Ui, events: &mut Vec<EventBlock>) {
@@ -731,7 +731,7 @@ impl ScheduleUi {
     }
 
     if response.drag_released() {
-      let event_opt = ui.memory().data.get_temp(id.with("dragging")).clone();
+      let event_opt = ui.memory().data.get_temp(id.with("dragging"));
       if let Some(event) = event_opt {
         ui.memory()
           .data
@@ -742,15 +742,15 @@ impl ScheduleUi {
   }
 
   fn new_event(&self, ui: &Ui) -> EventBlock {
-    let id = format!("{}", uuid::Uuid::new_v4().to_hyphenated());
     let mut pointer_pos = ui.input().pointer.interact_pos().unwrap();
     pointer_pos -= self.content_offset(ui.max_rect());
 
     let start = self.pointer_pos_to_datetime_snapping(pointer_pos).unwrap();
     EventBlock {
       color: self.new_event_color,
-      id,
+      id: new_event_id(),
       title: "".into(),
+      updated_title: None,
       description: None,
       start,
       end: start + self.min_event_duration,
@@ -783,4 +783,8 @@ fn state_override(
 
 fn event_id(event: &EventBlock) -> egui::Id {
   egui::Id::new("event").with(&event.id)
+}
+
+fn new_event_id() -> EventId {
+  format!("{}", Uuid::new_v4().to_hyphenated())
 }
