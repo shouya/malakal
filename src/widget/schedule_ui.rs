@@ -505,7 +505,7 @@ impl ScheduleUi {
 
     let seconds = SECS_PER_DAY as f32 * vert_pos;
     let snapped_seconds =
-      (seconds / self.snapping_duration.num_seconds() as f32).round() as i64
+      (seconds / self.snapping_duration.num_seconds() as f32).floor() as i64
         * self.snapping_duration.num_seconds() as i64;
 
     let date = self.first_day + Duration::days(day);
