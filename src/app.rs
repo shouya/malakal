@@ -1,11 +1,12 @@
 use chrono::Local;
 use eframe::{egui, epi};
 
-use crate::widget::{self, EventBlock};
+use crate::event::{Event, EventBuilder};
+use crate::widget;
 
 #[derive(Default)]
 pub struct App {
-  events: Vec<EventBlock>,
+  events: Vec<Event>,
 }
 
 impl epi::App for App {
@@ -18,8 +19,10 @@ impl epi::App for App {
       ui.heading("Hello!");
 
       egui::ScrollArea::both().show(ui, |ui| {
-        let mut scheduler =
-          widget::ScheduleUiBuilder::default().build().unwrap();
+        let mut scheduler = widget::ScheduleUiBuilder::default()
+          .new_event_calendar("time-blocking")
+          .build()
+          .unwrap();
         scheduler.show(ui, &mut self.events)
       })
     });
@@ -28,32 +31,31 @@ impl epi::App for App {
 
 impl App {
   pub fn seed_sample_events(&mut self) {
-    self.events.push(EventBlock {
-      id: "1".into(),
-      color: egui::Color32::GREEN,
-      title: "C: vocab".into(),
-      updated_title: None,
-      description: None,
-      start: Local::today().and_hms(14, 0, 0),
-      end: Local::today().and_hms(15, 0, 0),
-    });
-    self.events.push(EventBlock {
-      id: "2".into(),
-      color: egui::Color32::GREEN,
-      title: "C: feynman".into(),
-      updated_title: None,
-      description: None,
-      start: Local::today().and_hms(14, 30, 0),
-      end: Local::today().and_hms(16, 0, 0),
-    });
-    self.events.push(EventBlock {
-      id: "3".into(),
-      color: egui::Color32::RED,
-      title: "C: feynman 2".into(),
-      updated_title: None,
-      description: None,
-      start: Local::today().and_hms(15, 30, 0),
-      end: Local::today().and_hms(16, 0, 0),
-    });
+    let e1 = EventBuilder::default()
+      .id("1")
+      .title("C: vocab")
+      .calendar("time-blocking")
+      .start(Local::today().and_hms(14, 0, 0))
+      .end(Local::today().and_hms(15, 0, 0))
+      .build()
+      .unwrap();
+    let e2 = EventBuilder::default()
+      .id("2")
+      .title("C: reading")
+      .calendar("time-blocking")
+      .start(Local::today().and_hms(14, 30, 0))
+      .end(Local::today().and_hms(16, 0, 0))
+      .build()
+      .unwrap();
+    let e3 = EventBuilder::default()
+      .id("3")
+      .title("C: gaming")
+      .calendar("time-blocking")
+      .start(Local::today().and_hms(15, 30, 0))
+      .end(Local::today().and_hms(16, 23, 49))
+      .build()
+      .unwrap();
+
+    self.events.extend_from_slice(&[e1, e2, e3]);
   }
 }

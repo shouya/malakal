@@ -639,6 +639,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "icalendar"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6f9539aa862f7864ec1434d031135615c33a1bad8076803f3b5d7ce22563d6a"
+dependencies = [
+ "chrono",
+ "nom",
+ "uuid",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -739,6 +750,7 @@ dependencies = [
  "chrono",
  "derive_builder",
  "eframe",
+ "icalendar",
  "intervaltree",
  "uuid",
 ]

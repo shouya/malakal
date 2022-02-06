@@ -10,7 +10,10 @@ use uuid::Uuid;
 
 use layout::{Layout, LayoutAlgorithm};
 
+use crate::event::Event;
+
 #[derive(Builder, Clone, Debug, PartialEq)]
+#[builder(try_setter, setter(into))]
 pub struct ScheduleUi {
   #[builder(default = "3")]
   day_count: usize,
@@ -60,6 +63,8 @@ pub struct ScheduleUi {
 
   #[builder(default = "Color32::LIGHT_BLUE")]
   new_event_color: Color32,
+
+  new_event_calendar: String,
 }
 
 type EventId = String;
@@ -67,45 +72,13 @@ type EventId = String;
 #[derive(Clone, Copy, Debug)]
 struct DraggingEventYOffset(f32);
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct EventBlock {
-  pub id: EventId,
-  pub color: Color32,
-  pub title: String,
-  pub updated_title: Option<String>,
-  pub description: Option<String>,
-  pub start: DateTime<Local>,
-  pub end: DateTime<Local>,
-}
-
 #[derive(Debug)]
-enum EventBlockType {
+enum EventLayoutType {
   Single(Date<Local>, [f32; 2]),
   #[allow(unused)]
   AllDay([Date<Local>; 2]),
   #[allow(unused)]
   Multi([DateTime<Local>; 2]),
-}
-
-impl EventBlock {
-  fn layout_type(&self) -> EventBlockType {
-    if self.start.date() == self.end.date() {
-      // single day event
-      let date = self.start.date();
-      let a = day_progress(&self.start);
-      let b = day_progress(&self.end);
-      return EventBlockType::Single(date, [a, b]);
-    }
-
-    if self.end == (self.start.date() + one_day()).and_hms(0, 0, 0) {
-      let date = self.start.date();
-      let a = day_progress(&self.start);
-      let b = 1.0;
-      return EventBlockType::Single(date, [a, b]);
-    }
-
-    unimplemented!()
-  }
 }
 
 const SECS_PER_DAY: u64 = 24 * 3600;
@@ -126,14 +99,14 @@ fn one_day() -> Duration {
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events<'a>(&self, events: &'a [EventBlock]) -> Layout {
+  fn layout_events<'a>(&self, events: &'a [Event]) -> Layout {
     let mut layout = Layout::default();
     for day in 0..self.day_count {
       // layout for each day
       let events: Vec<layout::Ev<'a>> = events
         .iter()
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
-        .filter(|&e| matches!(e.layout_type(), EventBlockType::Single(..)))
+        .filter(|&e| matches!(layout_type(e), EventLayoutType::Single(..)))
         .map(|e| {
           if e.end - e.start < self.min_event_duration {
             let end = e.start + self.min_event_duration;
@@ -149,26 +122,25 @@ impl ScheduleUi {
     layout
   }
 
-  fn add_event_block(
+  fn add_event(
     &self,
     ui: &mut Ui,
-    event_block: &mut EventBlock,
+    event: &mut Event,
     layout: &Layout,
   ) -> Option<Response> {
     let widget_rect = ui.max_rect();
-    match event_block.layout_type() {
-      EventBlockType::Single(date, y) => {
-        let rel_x = layout.query(&event_block.id)?;
+    match layout_type(event) {
+      EventLayoutType::Single(date, y) => {
+        let rel_x = layout.query(&event.id)?;
         let day = self.date_to_day(date)?;
-        let event_rect =
-          self.layout_single_day_event(widget_rect, day, y, rel_x);
-        self.put_event_block(ui, event_block, event_rect)
+        let event_rect = self.layout_event(widget_rect, day, y, rel_x);
+        self.put_event_block(ui, event, event_rect)
       }
       _ => unimplemented!(),
     }
   }
 
-  fn layout_single_day_event(
+  fn layout_event(
     &self,
     widget_rect: Rect,
     day: usize,
@@ -219,7 +191,7 @@ impl ScheduleUi {
     resp: Response,
   ) -> Option<FocusedEventState> {
     let event_rect = resp.rect;
-    let [upper, lower] = self.event_block_resizer_regions(event_rect);
+    let [upper, lower] = self.event_resizer_regions(event_rect);
 
     let _lmb = egui::PointerButton::Primary;
 
@@ -267,9 +239,9 @@ impl ScheduleUi {
     ui: &mut Ui,
     event_rect: Rect,
     state: FocusedEventState,
-    event: &mut EventBlock,
+    event: &mut Event,
   ) -> Option<Response> {
-    let [upper, lower] = self.event_block_resizer_regions(event_rect);
+    let [upper, lower] = self.event_resizer_regions(event_rect);
 
     let resp = self.place_event_button(ui, event_rect, event);
     let active = match state {
@@ -341,7 +313,7 @@ impl ScheduleUi {
 
     if let Some(datetime) = self.pointer_to_datetime_auto(ui, pointer_pos) {
       let (beg, end) = set_time(datetime);
-      let [upper, lower] = self.event_block_resizer_regions(rect);
+      let [upper, lower] = self.event_resizer_regions(rect);
       self.show_resizer_hint(ui, upper, beg);
       self.show_resizer_hint(ui, lower, end);
     }
@@ -352,7 +324,7 @@ impl ScheduleUi {
   fn put_event_block(
     &self,
     ui: &mut Ui,
-    event: &mut EventBlock,
+    event: &mut Event,
     event_rect: Rect,
   ) -> Option<Response> {
     let event_rect =
@@ -391,7 +363,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    event: &EventBlock,
+    event: &Event,
   ) -> Response {
     let button = egui::Button::new(&event.title).sense(Sense::click_and_drag());
     ui.put(rect, button)
@@ -401,7 +373,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    event: &mut EventBlock,
+    event: &mut Event,
   ) -> Option<()> {
     event
       .updated_title
@@ -453,11 +425,7 @@ impl ScheduleUi {
   // 1. event end must be later than event start
   // 2. event duration must be at least self.min_event_duration long
   // 3. event date can't be changed
-  fn move_event_start(
-    &self,
-    event: &mut EventBlock,
-    new_start: DateTime<Local>,
-  ) {
+  fn move_event_start(&self, event: &mut Event, new_start: DateTime<Local>) {
     if event.end < new_start + self.min_event_duration {
       return;
     }
@@ -469,7 +437,7 @@ impl ScheduleUi {
     event.start = new_start;
   }
 
-  fn move_event_end(&self, event: &mut EventBlock, new_end: DateTime<Local>) {
+  fn move_event_end(&self, event: &mut Event, new_end: DateTime<Local>) {
     if new_end < event.start + self.min_event_duration {
       return;
     }
@@ -481,7 +449,7 @@ impl ScheduleUi {
     event.end = new_end;
   }
 
-  fn move_event(&self, event: &mut EventBlock, new_start: DateTime<Local>) {
+  fn move_event(&self, event: &mut Event, new_start: DateTime<Local>) {
     let duration = event.end - event.start;
     let new_end = new_start + duration;
 
@@ -541,7 +509,7 @@ impl ScheduleUi {
     Some(time)
   }
 
-  fn event_block_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
+  fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
     let mut upper_resizer = rect.shrink2(vec2(self.resizer_width_margin, 0.0));
     upper_resizer.set_height(self.resizer_height);
 
@@ -717,7 +685,7 @@ impl ScheduleUi {
     )
   }
 
-  pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<EventBlock>) {
+  pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<Event>) {
     parent_ui.ctx().set_debug_on_hover(true);
 
     let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
@@ -733,7 +701,7 @@ impl ScheduleUi {
     let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
     for event in events.iter_mut() {
       if let Some(_event_response) =
-        self.add_event_block(&mut event_overlay_ui, event, &layout)
+        self.add_event(&mut event_overlay_ui, event, &layout)
       {}
     }
 
@@ -745,7 +713,7 @@ impl ScheduleUi {
   fn handle_new_event(
     &self,
     ui: &mut Ui,
-    events: &mut Vec<EventBlock>,
+    events: &mut Vec<Event>,
   ) -> Option<Response> {
     use FocusedEventState::{DraggingEventEnd, Editing};
 
@@ -773,7 +741,7 @@ impl ScheduleUi {
       let event_id = ui.memory().data.get_temp(id)?;
       let event = find_event_mut(events, &event_id)?;
       ui.memory().data.insert_temp(event_egui_id(event), Editing);
-      ui.memory().data.remove::<EventBlock>(id);
+      ui.memory().data.remove::<Event>(id);
       return Some(response);
     }
 
@@ -788,15 +756,18 @@ impl ScheduleUi {
     Some(response)
   }
 
-  fn new_event(&self) -> EventBlock {
-    EventBlock {
-      color: self.new_event_color,
+  fn new_event(&self) -> Event {
+    let color = egui::Rgba::from(self.new_event_color);
+    Event {
+      color: [color.r(), color.g(), color.b()],
       id: new_event_id(),
+      calendar: self.new_event_calendar.clone(),
       title: "".into(),
       updated_title: Some("".into()),
       description: None,
       start: self.first_day.and_hms(0, 0, 0),
       end: self.first_day.and_hms(0, 0, 0) + self.min_event_duration,
+      pending_deletion: false,
     }
   }
 
@@ -828,7 +799,7 @@ impl ScheduleUi {
     &self,
     ui: &Ui,
     init_time: DateTime<Local>,
-    event: &mut EventBlock,
+    event: &mut Event,
   ) -> Option<FocusedEventState> {
     use FocusedEventState::{DraggingEventEnd, DraggingEventStart};
 
@@ -884,7 +855,7 @@ fn state_override(
   old_state
 }
 
-fn event_egui_id(event: &EventBlock) -> egui::Id {
+fn event_egui_id(event: &Event) -> egui::Id {
   egui::Id::new("event").with(&event.id)
 }
 
@@ -919,13 +890,32 @@ fn reorder_times(t1: &mut DateTime<Local>, t2: &mut DateTime<Local>) -> bool {
 }
 
 fn find_event_mut<'a>(
-  events: &'a mut Vec<EventBlock>,
+  events: &'a mut Vec<Event>,
   id: &EventId,
-) -> Option<&'a mut EventBlock> {
+) -> Option<&'a mut Event> {
   events.iter_mut().find(|x| x.id == *id)
 }
 
-fn remove_empty_events(events: &mut Vec<EventBlock>) {
+fn remove_empty_events(events: &mut Vec<Event>) {
   // events whose title are empty and is not been editing should be deleted.
   events.retain(|e| !(e.title.is_empty() && e.updated_title.is_none()))
+}
+
+fn layout_type(event: &Event) -> EventLayoutType {
+  if event.start.date() == event.end.date() {
+    // single day event
+    let date = event.start.date();
+    let a = day_progress(&event.start);
+    let b = day_progress(&event.end);
+    return EventLayoutType::Single(date, [a, b]);
+  }
+
+  if event.end == (event.start.date() + one_day()).and_hms(0, 0, 0) {
+    let date = event.start.date();
+    let a = day_progress(&event.start);
+    let b = 1.0;
+    return EventLayoutType::Single(date, [a, b]);
+  }
+
+  unimplemented!()
 }
