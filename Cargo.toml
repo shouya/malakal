@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 eframe = "0.16.0"
 chrono = "0.4.19"
+chrono-tz = "0.6.1"
 derive_builder = "0.10.2"
 intervaltree = "0.2.7"
 uuid = { version = "0.8.2", features = ["v4"] }

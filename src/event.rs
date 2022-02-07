@@ -12,8 +12,11 @@ pub struct Event {
 
   pub start: DateTime<Local>,
   pub end: DateTime<Local>,
+
   #[builder(default = "Local::now()")]
   pub created_at: DateTime<Local>,
+  #[builder(default = "Local::now()")]
+  pub modified_at: DateTime<Local>,
 
   #[builder(default)]
   pub description: Option<String>,

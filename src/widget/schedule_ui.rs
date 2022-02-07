@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use layout::{Layout, LayoutAlgorithm};
 
-use crate::event::Event;
+use crate::event::{Event, EventBuilder};
 
 #[derive(Builder, Clone, Debug, PartialEq)]
 #[builder(try_setter, setter(into))]
@@ -758,18 +758,19 @@ impl ScheduleUi {
 
   fn new_event(&self) -> Event {
     let color = egui::Rgba::from(self.new_event_color);
-    Event {
-      color: [color.r(), color.g(), color.b()],
-      id: new_event_id(),
-      calendar: self.new_event_calendar.clone(),
-      title: "".into(),
-      updated_title: Some("".into()),
-      description: None,
-      start: self.first_day.and_hms(0, 0, 0),
-      end: self.first_day.and_hms(0, 0, 0) + self.min_event_duration,
-      created_at: Local::now(),
-      pending_deletion: false,
-    }
+    let mut event = EventBuilder::default()
+      .id(new_event_id())
+      .calendar(self.new_event_calendar.as_str())
+      .title("")
+      .description(None)
+      .start(self.first_day.and_hms(0, 0, 0))
+      .end(self.first_day.and_hms(0, 0, 0) + self.min_event_duration)
+      .color([color.r(), color.g(), color.b()])
+      .build()
+      .unwrap();
+
+    event.updated_title = Some("".into());
+    event
   }
 
   fn pointer_to_datetime_auto(
