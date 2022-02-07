@@ -767,6 +767,7 @@ impl ScheduleUi {
       description: None,
       start: self.first_day.and_hms(0, 0, 0),
       end: self.first_day.and_hms(0, 0, 0) + self.min_event_duration,
+      created_at: Local::now(),
       pending_deletion: false,
     }
   }

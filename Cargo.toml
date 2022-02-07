@@ -9,4 +9,7 @@ chrono = "0.4.19"
 derive_builder = "0.10.2"
 intervaltree = "0.2.7"
 uuid = { version = "0.8.2", features = ["v4"] }
-icalendar = { version = "0.11.0", features = ["parser"] }
+# only for ics generation
+ics = "0.5.7"
+# only for ics parsing
+ical = { version = "0.7.0", features = ["ical"] }
