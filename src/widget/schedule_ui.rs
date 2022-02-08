@@ -692,8 +692,6 @@ impl ScheduleUi {
   }
 
   pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<Event>) {
-    parent_ui.ctx().set_debug_on_hover(true);
-
     let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
 
     if parent_ui.is_rect_visible(rect) {
