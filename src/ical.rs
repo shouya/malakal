@@ -3,11 +3,9 @@ use ical::property::Property;
 
 use crate::event::{Event, EventBuilder};
 
-#[allow(unused)]
 pub(crate) struct ICal;
 
 impl ICal {
-  #[allow(unused)]
   pub fn generate(&self, event: &Event) -> Option<String> {
     use ics::{properties::*, *};
 
@@ -29,7 +27,6 @@ impl ICal {
     Some(ical_cal.to_string())
   }
 
-  #[allow(unused)]
   pub fn parse(&self, calendar_name: &str, content: &str) -> Option<Event> {
     use ical::parser::ical::IcalParser;
 
