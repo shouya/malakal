@@ -432,7 +432,7 @@ impl ScheduleUi {
     }
 
     if event.start != new_start {
-      event.changed = true;
+      event.mark_changed();
       event.start = new_start;
     }
   }
@@ -447,7 +447,7 @@ impl ScheduleUi {
     }
 
     if event.end != new_end {
-      event.changed = true;
+      event.mark_changed();
       event.end = new_end;
     }
   }
@@ -461,7 +461,7 @@ impl ScheduleUi {
     }
 
     if event.start != new_start || event.end != new_end {
-      event.changed = true;
+      event.mark_changed();
       event.start = new_start;
       event.end = new_end;
     }
@@ -779,7 +779,7 @@ impl ScheduleUi {
       .unwrap();
 
     event.updated_title = Some("".into());
-    event.changed = true;
+    event.mark_changed();
     event
   }
 
@@ -911,7 +911,7 @@ fn find_event_mut<'a>(
 fn remove_empty_events(events: &mut Vec<Event>) {
   for event in events.iter_mut() {
     if event.title.is_empty() && event.updated_title.is_none() {
-      event.deleted = true;
+      event.mark_deleted();
     }
   }
 }
@@ -938,7 +938,7 @@ fn layout_type(event: &Event) -> EventLayoutType {
 fn change_event_title(event: &mut Event) {
   if let Some(new_title) = event.updated_title.take() {
     if !new_title.is_empty() && event.title != new_title {
-      event.changed = true;
+      event.mark_changed();
       event.title = new_title;
     }
   }

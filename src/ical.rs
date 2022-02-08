@@ -21,6 +21,7 @@ impl ICal {
       ics::Event::new(&event.id, to_timestamp(event.created_at));
     ical_event.push(DtStart::new(to_timestamp(event.start)));
     ical_event.push(DtEnd::new(to_timestamp(event.end)));
+    ical_event.push(LastModified::new(to_timestamp(event.modified_at)));
 
     ical_event.push(Summary::new(&event.title));
     if let Some(desc) = &event.description {
@@ -64,6 +65,7 @@ impl ICal {
         "DTSTAMP" => event.created_at(parse_time(p)?),
         "DTSTART" => event.start(parse_time(p)?),
         "DTEND" => event.end(parse_time(p)?),
+        "LAST-MODIFIED" => event.modified_at(parse_time(p)?),
         _ => &mut event,
       };
     }
