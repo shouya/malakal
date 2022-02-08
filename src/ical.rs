@@ -15,7 +15,6 @@ impl ICal {
       Standard::new("19700329T020000", "+0000", "+0000"),
     ));
     ical_cal.push(CalScale::new("GREGORIAN"));
-    ical_cal.push(Method::new("PUBLISH"));
 
     let mut ical_event =
       ics::Event::new(&event.id, to_timestamp(event.timestamp));
