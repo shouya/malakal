@@ -10,17 +10,15 @@ use crate::{
 
 #[derive(Builder)]
 #[builder(try_setter, setter(into))]
-struct LocalDir {
+pub struct LocalDir {
   dir: PathBuf,
   calendar: String,
 }
 
 impl LocalDir {
   fn all_events(&self) -> impl Iterator<Item = Event> + '_ {
-    let iter = self
-      .dir
-      .read_dir()
-      .expect("read_dir failed")
+    let entries = self.dir.read_dir().expect("read_dir failed");
+    let iter = entries
       .into_iter()
       .filter_map(|entry| entry.ok())
       .filter(|entry| entry.file_type().unwrap().is_file())
@@ -67,21 +65,21 @@ impl Backend for LocalDir {
     Some(())
   }
 
-  fn update_event(&mut self, updated_event: Event) -> Option<()> {
-    let ics_content = ICal.generate(&updated_event)?;
+  fn update_event(&mut self, updated_event: &Event) -> Option<()> {
+    let ics_content = ICal.generate(updated_event)?;
     let path = self.event_path(&updated_event.id);
 
     if !path.exists() {
       // TODO: show warning
     }
 
-    std::fs::write(path, ics_content).ok()?;
+    std::fs::write(dbg!(path), dbg!(ics_content)).ok()?;
 
     Some(())
   }
 
-  fn create_event(&mut self, event: Event) -> Option<()> {
-    let ics_content = ICal.generate(&event)?;
+  fn create_event(&mut self, event: &Event) -> Option<()> {
+    let ics_content = ICal.generate(event)?;
     let path = self.event_path(&event.id);
 
     std::fs::write(path, ics_content).ok()?;
@@ -94,7 +92,7 @@ impl Backend for LocalDir {
     let buffer = std::fs::read(path).ok()?;
     let string = String::from_utf8(buffer).ok()?;
 
-    ICal.parse(&self.calendar, &content)
+    ICal.parse(&self.calendar, &string)
   }
 }
 

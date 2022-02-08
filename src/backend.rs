@@ -1,10 +1,11 @@
 mod local_dir;
 
-use super::event::{Event, EventId};
+pub use local_dir::*;
 
+use super::event::{Event, EventId};
 use chrono::{DateTime, Local};
 
-trait Backend {
+pub trait Backend {
   fn get_event(&self, event_id: &EventId) -> Option<Event>;
 
   // get events which overlap with the from..to interval.
@@ -16,9 +17,7 @@ trait Backend {
 
   fn delete_event(&mut self, event_id: &EventId) -> Option<()>;
 
-  fn update_event(&mut self, updated_event: Event) -> Option<()>;
+  fn update_event(&mut self, updated_event: &Event) -> Option<()>;
 
-  // create a event
-
-  fn create_event(&mut self, event: Event) -> Option<()>;
+  fn create_event(&mut self, event: &Event) -> Option<()>;
 }

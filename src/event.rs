@@ -26,6 +26,17 @@ pub struct Event {
 
   #[builder(default, setter(skip))]
   pub(crate) updated_title: Option<String>,
+
   #[builder(default = "false", setter(skip))]
-  pub(crate) pending_deletion: bool,
+  pub(crate) deleted: bool,
+
+  #[builder(default = "false", setter(skip))]
+  pub(crate) changed: bool,
+}
+
+impl Event {
+  pub(crate) fn reset_dirty_flags(&mut self) {
+    self.deleted = false;
+    self.changed = false;
+  }
 }

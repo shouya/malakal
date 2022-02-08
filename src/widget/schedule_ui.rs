@@ -105,6 +105,7 @@ impl ScheduleUi {
       // layout for each day
       let events: Vec<layout::Ev<'a>> = events
         .iter()
+        .filter(|&e| !e.deleted)
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
         .filter(|&e| matches!(layout_type(e), EventLayoutType::Single(..)))
         .map(|e| {
@@ -393,16 +394,12 @@ impl ScheduleUi {
     // We cannot use key_released here, because it will be taken
     // precedence by resp.lost_focus() and commit the change.
     if ui.input().key_pressed(egui::Key::Escape) {
-      event.updated_title.take();
+      discard_event_title(event);
       return None;
     }
 
     if resp.lost_focus() || resp.clicked_elsewhere() || anything_else_dragging {
-      if !event.updated_title.as_ref().unwrap().is_empty() {
-        event.title = event.updated_title.take().unwrap();
-      } else {
-        event.updated_title.take();
-      }
+      change_event_title(event);
       return None;
     }
 
@@ -434,7 +431,10 @@ impl ScheduleUi {
       return;
     }
 
-    event.start = new_start;
+    if event.start != new_start {
+      event.changed = true;
+      event.start = new_start;
+    }
   }
 
   fn move_event_end(&self, event: &mut Event, new_end: DateTime<Local>) {
@@ -446,7 +446,10 @@ impl ScheduleUi {
       return;
     }
 
-    event.end = new_end;
+    if event.end != new_end {
+      event.changed = true;
+      event.end = new_end;
+    }
   }
 
   fn move_event(&self, event: &mut Event, new_start: DateTime<Local>) {
@@ -457,8 +460,11 @@ impl ScheduleUi {
       return;
     }
 
-    event.start = new_start;
-    event.end = new_end;
+    if event.start != new_start || event.end != new_end {
+      event.changed = true;
+      event.start = new_start;
+      event.end = new_end;
+    }
   }
 
   fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime<Local>> {
@@ -699,10 +705,13 @@ impl ScheduleUi {
     let layout = self.layout_events(events);
 
     let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
+
     for event in events.iter_mut() {
-      if let Some(_event_response) =
-        self.add_event(&mut event_overlay_ui, event, &layout)
-      {}
+      if event.deleted {
+        continue;
+      }
+
+      self.add_event(&mut event_overlay_ui, event, &layout);
     }
 
     self.handle_new_event(&mut ui, events);
@@ -770,6 +779,7 @@ impl ScheduleUi {
       .unwrap();
 
     event.updated_title = Some("".into());
+    event.changed = true;
     event
   }
 
@@ -899,8 +909,11 @@ fn find_event_mut<'a>(
 }
 
 fn remove_empty_events(events: &mut Vec<Event>) {
-  // events whose title are empty and is not been editing should be deleted.
-  events.retain(|e| !(e.title.is_empty() && e.updated_title.is_none()))
+  for event in events.iter_mut() {
+    if event.title.is_empty() && event.updated_title.is_none() {
+      event.deleted = true;
+    }
+  }
 }
 
 fn layout_type(event: &Event) -> EventLayoutType {
@@ -920,4 +933,17 @@ fn layout_type(event: &Event) -> EventLayoutType {
   }
 
   unimplemented!()
+}
+
+fn change_event_title(event: &mut Event) {
+  if let Some(new_title) = event.updated_title.take() {
+    if !new_title.is_empty() && event.title != new_title {
+      event.changed = true;
+      event.title = new_title;
+    }
+  }
+}
+
+fn discard_event_title(event: &mut Event) {
+  event.updated_title.take();
 }

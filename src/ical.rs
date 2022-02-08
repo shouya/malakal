@@ -22,6 +22,11 @@ impl ICal {
     ical_event.push(DtStart::new(to_timestamp(event.start)));
     ical_event.push(DtEnd::new(to_timestamp(event.end)));
 
+    ical_event.push(Summary::new(&event.title));
+    if let Some(desc) = &event.description {
+      ical_event.push(Description::new(desc));
+    }
+
     ical_cal.add_event(ical_event);
 
     Some(ical_cal.to_string())
@@ -63,7 +68,7 @@ impl ICal {
       };
     }
 
-    dbg!(event.build()).ok()
+    event.build().ok()
   }
 }
 
