@@ -59,7 +59,7 @@ impl App {
       if event.deleted {
         self.backend.delete_event(&event.id);
       } else if event.changed {
-        dbg!(self.backend.update_event(event));
+        self.backend.update_event(event);
       }
     }
 

@@ -13,6 +13,10 @@ pub struct Event {
   pub start: DateTime<Local>,
   pub end: DateTime<Local>,
 
+  // RFC 5545 DTSTAMP field
+  #[builder(default = "Local::now()")]
+  pub timestamp: DateTime<Local>,
+
   #[builder(default = "Local::now()")]
   pub created_at: DateTime<Local>,
   #[builder(default = "Local::now()")]

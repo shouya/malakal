@@ -73,7 +73,7 @@ impl Backend for LocalDir {
       // TODO: show warning
     }
 
-    std::fs::write(dbg!(path), dbg!(ics_content)).ok()?;
+    std::fs::write(path, ics_content).ok()?;
 
     Some(())
   }
