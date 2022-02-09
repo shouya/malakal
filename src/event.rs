@@ -46,7 +46,7 @@ impl Event {
 
   pub(crate) fn mark_deleted(&mut self) {
     self.modified_at = Local::now();
-    self.changed = true;
+    self.deleted = true;
   }
 
   pub(crate) fn reset_dirty_flags(&mut self) {

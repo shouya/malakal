@@ -700,6 +700,8 @@ impl ScheduleUi {
 
     let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
 
+    self.regularize_events(events);
+
     let layout = self.layout_events(events);
 
     let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
@@ -840,6 +842,16 @@ impl ScheduleUi {
       Some(DraggingEventEnd)
     }
   }
+
+  fn regularize_events(&self, events: &mut Vec<Event>) {
+    remove_empty_events(events);
+
+    for event in events.iter_mut() {
+      if event.end - event.start < self.min_event_duration {
+        self.move_event_end(event, event.start + self.min_event_duration);
+      }
+    }
+  }
 }
 
 fn day_progress(datetime: &DateTime<Local>) -> f32 {
@@ -908,7 +920,7 @@ fn find_event_mut<'a>(
 
 fn remove_empty_events(events: &mut Vec<Event>) {
   for event in events.iter_mut() {
-    if event.title.is_empty() && event.updated_title.is_none() {
+    if event.updated_title.is_none() && event.title.is_empty() {
       event.mark_deleted();
     }
   }

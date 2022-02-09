@@ -12,10 +12,13 @@ fn main() {
     .build()
     .expect("build backend");
 
-  let mut app =
-    app::App::new("time-blocking".into(), chrono::Local::today(), backend);
+  let mut app = app::App::new("time-blocking".into(), today_plus(-1), backend);
 
   app.load_events();
 
   eframe::run_native(Box::new(app), options);
+}
+
+fn today_plus(offset: i64) -> chrono::Date<chrono::Local> {
+  chrono::Local::today() + chrono::Duration::days(offset)
 }

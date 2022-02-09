@@ -18,7 +18,7 @@ pub struct LocalDir {
 impl LocalDir {
   fn all_events(&self) -> impl Iterator<Item = Event> + '_ {
     let entries = self.dir.read_dir().expect("read_dir failed");
-    let iter = entries
+    entries
       .into_iter()
       .filter_map(|entry| entry.ok())
       .filter(|entry| entry.file_type().unwrap().is_file())
@@ -26,9 +26,7 @@ impl LocalDir {
       .filter(|path| path.extension().and_then(OsStr::to_str) == Some("ics"))
       .filter_map(|path| std::fs::read(path).ok())
       .filter_map(|vec| String::from_utf8(vec).ok())
-      .filter_map(|content| ICal.parse(&self.calendar, &content));
-
-    iter
+      .filter_map(|content| ICal.parse(&self.calendar, &content))
   }
 
   fn event_path(&self, event_id: &EventId) -> PathBuf {
@@ -101,5 +99,5 @@ fn event_visible_in_range(
   start: DateTime<chrono::Local>,
   end: DateTime<chrono::Local>,
 ) -> bool {
-  e.start.max(start) < e.end.min(end)
+  e.start.max(start) <= e.end.min(end)
 }

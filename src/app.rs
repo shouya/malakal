@@ -22,6 +22,7 @@ impl epi::App for App {
       egui::ScrollArea::both().show(ui, |ui| {
         let mut scheduler = widget::ScheduleUiBuilder::default()
           .new_event_calendar(&self.calendar)
+          .first_day(self.date)
           .build()
           .unwrap();
         scheduler.show(ui, &mut self.events)
@@ -55,7 +56,7 @@ impl App {
   }
 
   fn apply_changes(&mut self) {
-    for event in self.events.iter_mut() {
+    for event in self.events.iter() {
       if event.deleted {
         self.backend.delete_event(&event.id);
       } else if event.changed {
