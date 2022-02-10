@@ -370,10 +370,18 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    event: &Event,
+    event: &mut Event,
   ) -> Response {
     let button = egui::Button::new(&event.title).sense(Sense::click_and_drag());
-    ui.put(rect, button)
+    let resp = ui.put(rect, button);
+    resp.clone().context_menu(|ui| {
+      if ui.button("Delete").clicked() {
+        event.deleted = true;
+        ui.close_menu();
+      }
+    });
+
+    resp
   }
 
   fn place_event_editor(
@@ -735,7 +743,7 @@ impl ScheduleUi {
 
   fn handle_context_menu(
     &self,
-    ui: &mut Ui,
+    _ui: &mut Ui,
     state: &mut ScheduleUiState,
     response: &Response,
   ) {
