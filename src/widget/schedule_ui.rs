@@ -3,8 +3,8 @@ mod layout;
 use chrono::{Date, DateTime, Duration, Local};
 use derive_builder::Builder;
 use eframe::egui::{
-  self, pos2, vec2, Color32, CursorIcon, Label, LayerId, Pos2, Rect, Response,
-  Sense, Ui, Vec2,
+  self, pos2, text::LayoutJob, vec2, Color32, CursorIcon, Label, LayerId, Pos2,
+  Rect, Response, Sense, Ui, Vec2,
 };
 use uuid::Uuid;
 
@@ -224,7 +224,7 @@ impl ScheduleUi {
     if event_rect.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::Grab;
 
-      if resp.clicked() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.clicked_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::Editing);
       }
 
@@ -372,8 +372,16 @@ impl ScheduleUi {
     rect: Rect,
     event: &mut Event,
   ) -> Response {
-    let button = egui::Button::new(&event.title).sense(Sense::click_and_drag());
+    let (layout, clipped) = self.shorten_event_label(ui, rect, &event.title);
+
+    let button = egui::Button::new(layout).sense(Sense::click_and_drag());
     let resp = ui.put(rect, button);
+
+    if clipped {
+      // text is clipped, show a tooltip
+      resp.clone().on_hover_text(event.title.clone());
+    }
+
     resp.clone().context_menu(|ui| {
       if ui.button("Delete").clicked() {
         event.deleted = true;
@@ -382,6 +390,41 @@ impl ScheduleUi {
     });
 
     resp
+  }
+
+  fn shorten_event_label(
+    &self,
+    ui: &mut Ui,
+    rect: Rect,
+    label: &str,
+  ) -> (impl Into<egui::WidgetText>, bool) {
+    let text_style = egui::TextStyle::Button;
+    let color = ui.visuals().text_color();
+
+    let layout_job = |text| {
+      let mut j = LayoutJob::simple_singleline(text, text_style, color);
+      j.wrap_width = rect.shrink2(ui.spacing().button_padding).width();
+      j
+    };
+
+    let job = layout_job(label.into());
+    let line_height = job.font_height(ui.fonts());
+    let mut galley = ui.fonts().layout_job(job);
+
+    if galley.size().y <= line_height {
+      // multiline
+      return (galley, false);
+    }
+
+    for n in (0..(label.len() - 3)).rev() {
+      let text = format!("{}..", &label[0..n]);
+      galley = ui.fonts().layout_job(layout_job(text));
+      if galley.size().y <= line_height {
+        return (galley, true);
+      }
+    }
+
+    (galley, false)
   }
 
   fn place_event_editor(
