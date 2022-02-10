@@ -12,6 +12,12 @@ use layout::{Layout, LayoutAlgorithm};
 
 use crate::event::{Event, EventBuilder};
 
+pub(crate) struct ScheduleUiState {
+  pub events: Vec<Event>,
+  pub date: Date<Local>,
+  pub request_refresh_events: bool,
+}
+
 #[derive(Builder, Clone, Debug, PartialEq)]
 #[builder(try_setter, setter(into))]
 pub struct ScheduleUi {
@@ -201,7 +207,7 @@ impl ScheduleUi {
 
     if upper.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventStart);
       }
       return None;
@@ -209,7 +215,7 @@ impl ScheduleUi {
 
     if lower.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventEnd);
       }
       return None;
@@ -218,11 +224,11 @@ impl ScheduleUi {
     if event_rect.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::Grab;
 
-      if resp.clicked() {
+      if resp.clicked() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::Editing);
       }
 
-      if resp.drag_started() {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
         ui.memory().data.insert_temp(egui::Id::null(), offset);
         return Some(FocusedEventState::Dragging);
@@ -691,7 +697,11 @@ impl ScheduleUi {
     )
   }
 
-  pub fn show(&mut self, parent_ui: &mut Ui, events: &mut Vec<Event>) {
+  pub(crate) fn show(
+    &mut self,
+    parent_ui: &mut Ui,
+    state: &mut ScheduleUiState,
+  ) {
     let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
 
     if parent_ui.is_rect_visible(rect) {
@@ -700,13 +710,13 @@ impl ScheduleUi {
 
     let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
 
-    self.regularize_events(events);
+    self.regularize_events(&mut state.events);
 
-    let layout = self.layout_events(events);
+    let layout = self.layout_events(&state.events);
 
     let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
 
-    for event in events.iter_mut() {
+    for event in state.events.iter_mut() {
       if event.deleted {
         continue;
       }
@@ -714,22 +724,43 @@ impl ScheduleUi {
       self.add_event(&mut event_overlay_ui, event, &layout);
     }
 
-    self.handle_new_event(&mut ui, events);
+    let response =
+      ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
 
-    remove_empty_events(events);
+    self.handle_new_event(&mut ui, &mut state.events, &response);
+    self.handle_context_menu(&mut ui, state, &response);
+
+    remove_empty_events(&mut state.events);
+  }
+
+  fn handle_context_menu(
+    &self,
+    ui: &mut Ui,
+    state: &mut ScheduleUiState,
+    response: &Response,
+  ) {
+    response.clone().context_menu(|ui| {
+      if ui.button("Refresh").clicked() {
+        state.request_refresh_events = true;
+        ui.label("Refreshing events...");
+        ui.close_menu();
+      }
+    });
   }
 
   fn handle_new_event(
     &self,
     ui: &mut Ui,
     events: &mut Vec<Event>,
-  ) -> Option<Response> {
+    response: &Response,
+  ) -> Option<()> {
     use FocusedEventState::{DraggingEventEnd, Editing};
 
-    let id = ui.make_persistent_id("empty_area").with("dragging");
-    let response = ui.interact(ui.max_rect(), id, Sense::drag());
+    let id = response.id;
 
-    if response.drag_started() {
+    if response.drag_started()
+      && response.dragged_by(egui::PointerButton::Primary)
+    {
       let mut event = self.new_event();
       let pointer_pos = self.relative_pointer_pos(ui)?;
       let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
@@ -743,7 +774,7 @@ impl ScheduleUi {
         .data
         .insert_temp(event_egui_id(&event), DraggingEventEnd);
       events.push(event);
-      return Some(response);
+      return Some(());
     }
 
     if response.drag_released() {
@@ -751,10 +782,10 @@ impl ScheduleUi {
       let event = find_event_mut(events, &event_id)?;
       ui.memory().data.insert_temp(event_egui_id(event), Editing);
       ui.memory().data.remove::<Event>(id);
-      return Some(response);
+      return Some(());
     }
 
-    if response.dragged() {
+    if response.dragged() && response.dragged_by(egui::PointerButton::Primary) {
       let event_id = ui.memory().data.get_temp(id)?;
       let event = find_event_mut(events, &event_id)?;
       let init_time = ui.memory().data.get_temp(id)?;
@@ -762,7 +793,7 @@ impl ScheduleUi {
       ui.memory().data.insert_temp(event_egui_id(event), state);
     }
 
-    Some(response)
+    Some(())
   }
 
   fn new_event(&self) -> Event {

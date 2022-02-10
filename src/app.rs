@@ -1,14 +1,13 @@
 use chrono::{Date, Local};
 use eframe::{egui, epi};
 
-use crate::event::Event;
+use crate::widget::ScheduleUiState;
 use crate::{backend::Backend, widget};
 
 pub struct App {
-  date: Date<Local>,
   day_count: usize,
   calendar: String,
-  events: Vec<Event>,
+  state: widget::ScheduleUiState,
   backend: Box<dyn Backend>,
 }
 
@@ -18,14 +17,16 @@ impl epi::App for App {
   }
 
   fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
+    self.load_events();
+
     egui::CentralPanel::default().show(ctx, |ui| {
       egui::ScrollArea::both().show(ui, |ui| {
         let mut scheduler = widget::ScheduleUiBuilder::default()
           .new_event_calendar(&self.calendar)
-          .first_day(self.date)
+          .first_day(self.state.date)
           .build()
           .unwrap();
-        scheduler.show(ui, &mut self.events)
+        scheduler.show(ui, &mut self.state)
       })
     });
 
@@ -39,24 +40,34 @@ impl App {
     date: Date<Local>,
     backend: impl Backend + 'static,
   ) -> Self {
+    let state = ScheduleUiState {
+      date,
+      request_refresh_events: true,
+      events: vec![],
+    };
+
     Self {
       calendar,
-      date,
       backend: Box::new(backend),
-      events: vec![],
       day_count: 3,
+      state,
     }
   }
 
   pub fn load_events(&mut self) {
-    let start = self.date.and_hms(0, 0, 0);
+    if !self.state.request_refresh_events {
+      return;
+    }
+
+    let start = self.state.date.and_hms(0, 0, 0);
     let end = start + chrono::Duration::days(self.day_count as i64);
     let events = self.backend.get_events(start, end).expect("load events");
-    self.events = events;
+    self.state.events = events;
+    self.state.request_refresh_events = false;
   }
 
   fn apply_changes(&mut self) {
-    for event in self.events.iter() {
+    for event in self.state.events.iter() {
       if event.deleted {
         self.backend.delete_event(&event.id);
       } else if event.changed {
@@ -64,9 +75,9 @@ impl App {
       }
     }
 
-    self.events.retain(|e| !e.deleted);
+    self.state.events.retain(|e| !e.deleted);
 
-    for event in self.events.iter_mut() {
+    for event in self.state.events.iter_mut() {
       event.reset_dirty_flags();
     }
   }

@@ -1,3 +1,3 @@
-mod schedule_ui;
+pub mod schedule_ui;
 
 pub use schedule_ui::*;
