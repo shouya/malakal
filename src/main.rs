@@ -8,7 +8,7 @@ fn main() {
   let options = eframe::NativeOptions::default();
   let backend = backend::LocalDirBuilder::default()
     .calendar("time-blocking")
-    .dir(format!("{}/.calendar/time-blocking-malakal", env!("HOME")))
+    .dir(format!("{}/.calendar/time-blocking", env!("HOME")))
     .build()
     .expect("build backend");
 
