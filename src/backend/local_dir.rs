@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::DateTime;
 use derive_builder::Builder;
 use std::{
@@ -35,9 +36,13 @@ impl LocalDir {
   }
 
   pub(crate) fn parse_event<P: AsRef<Path>>(&self, path: P) -> Result<Event> {
-    let content = std::fs::read(path)?;
+    let path = path.as_ref().to_owned();
+    let content = std::fs::read(&path)?;
     let string = String::from_utf8(content)?;
-    ICal.parse(&self.calendar, &string)
+
+    ICal
+      .parse(&self.calendar, &string)
+      .with_context(|| format!("parse ics file: {}", path.display()))
   }
 
   fn all_events(&self) -> impl Iterator<Item = Event> + '_ {

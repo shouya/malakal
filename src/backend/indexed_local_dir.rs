@@ -74,8 +74,7 @@ LIMIT 1
     Ok(())
   }
 
-  fn all_event_entry_ids(&self) -> Result<Vec<EventId>> {
-    let conn = self.conn.borrow();
+  fn all_event_entry_ids(&self, conn: &Connection) -> Result<Vec<EventId>> {
     let mut stmt = conn.prepare_cached("SELECT event_id FROM events")?;
     let event_ids = stmt
       .query_map([], |row| row.get::<_, EventId>(0))?
@@ -181,7 +180,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
   fn refresh_deleted_files(&self) -> Result<()> {
     let mut conn = self.conn.borrow_mut();
     let tx = conn.transaction()?;
-    for event_id in self.all_event_entry_ids()? {
+    for event_id in self.all_event_entry_ids(&tx)? {
       let path = self.backend.event_path(&event_id);
       if !path.exists() {
         self.delete_event_entry(&tx, &event_id)?;

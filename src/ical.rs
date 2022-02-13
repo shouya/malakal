@@ -1,5 +1,5 @@
-use anyhow::{bail, ensure};
-use chrono::{DateTime, Local, Utc};
+use anyhow::{bail, ensure, Context};
+use chrono::{DateTime, Duration, Local, Utc};
 use ical::property::Property;
 
 use crate::event::{Event, EventBuilder};
@@ -68,13 +68,25 @@ impl ICal {
 
     event.calendar(calendar_name);
 
+    let mut start = None;
+
     for p in ical_event.properties {
       match p.name.as_str() {
         "UID" => event.id(value(p)?),
         "SUMMARY" => event.title(value(p)?),
         "DTSTAMP" => event.created_at(parse_time(p)?),
-        "DTSTART" => event.start(parse_time(p)?),
+        "DTSTART" => {
+          start = Some(parse_time(p)?);
+          event.start(start.unwrap())
+        }
         "DTEND" => event.end(parse_time(p)?),
+        "DURATION" => {
+          let value = value(p)?;
+          let start =
+            start.ok_or_else(|| anyhow!("duration: start not defined yet"))?;
+          let end = start + parse_duration(&value)?;
+          event.end(end)
+        }
         "CREATED" => event.created_at(parse_time(p)?),
         "LAST-MODIFIED" => event.modified_at(parse_time(p)?),
         _ => &mut event,
@@ -105,4 +117,23 @@ fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<DateTime<Utc>> {
   }
 
   bail!("failed to parse timestamp {}", s)
+}
+
+fn parse_duration(s: &str) -> Result<Duration> {
+  let reg = regex::Regex::new(r"PT((?P<h>\d+)H)?((?P<m>\d+)M)?")?;
+  let cap = reg
+    .captures(s)
+    .ok_or_else(|| anyhow!("Invalid duration parsed {}", s))?;
+
+  let mut dur = Duration::zero();
+  if let Some(m) = cap.name("h") {
+    let hours = m.as_str().parse::<i64>()?;
+    dur = dur + Duration::hours(hours);
+  }
+  if let Some(m) = cap.name("m") {
+    let mins = m.as_str().parse::<i64>()?;
+    dur = dur + Duration::minutes(mins);
+  }
+
+  Ok(dur)
 }

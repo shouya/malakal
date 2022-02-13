@@ -880,6 +880,7 @@ dependencies = [
  "ics",
  "intervaltree",
  "log",
+ "regex",
  "rusqlite",
  "uuid",
 ]
