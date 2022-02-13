@@ -1028,7 +1028,8 @@ fn layout_type(event: &Event) -> EventLayoutType {
 }
 
 fn change_event_title(event: &mut Event) {
-  if let Some(new_title) = event.updated_title.take() {
+  if let Some(mut new_title) = event.updated_title.take() {
+    new_title = new_title.trim().into();
     if !new_title.is_empty() && event.title != new_title {
       event.mark_changed();
       event.title = new_title;

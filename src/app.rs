@@ -69,6 +69,11 @@ impl App {
 
   fn apply_changes(&mut self) -> Result<()> {
     for event in self.state.events.iter() {
+      if event.is_editing() {
+        // we do not create events that are still been edited
+        continue;
+      }
+
       if event.deleted {
         self.backend.delete_event(&event.id)?;
       } else if event.changed {

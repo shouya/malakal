@@ -53,4 +53,8 @@ impl Event {
     self.deleted = false;
     self.changed = false;
   }
+
+  pub(crate) fn is_editing(&self) -> bool {
+    self.updated_title.is_some()
+  }
 }
