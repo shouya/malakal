@@ -84,7 +84,7 @@ fn from_timestamp(s: &str, tzid: Option<&str>) -> Option<DateTime<Utc>> {
   use chrono_tz::Tz;
   use std::str::FromStr;
 
-  if let Ok(t) = Utc.datetime_from_str(&s, "%Y%m%dT%H%M%SZ") {
+  if let Ok(t) = Utc.datetime_from_str(s, "%Y%m%dT%H%M%SZ") {
     return Some(t);
   }
 

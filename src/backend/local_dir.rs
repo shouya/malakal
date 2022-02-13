@@ -1,6 +1,10 @@
 use chrono::DateTime;
 use derive_builder::Builder;
-use std::{ffi::OsStr, path::PathBuf};
+use std::{
+  ffi::OsStr,
+  fs::DirEntry,
+  path::{Path, PathBuf},
+};
 
 use crate::{
   backend::Backend,
@@ -16,20 +20,32 @@ pub struct LocalDir {
 }
 
 impl LocalDir {
-  fn all_events(&self) -> impl Iterator<Item = Event> + '_ {
+  pub(crate) fn all_event_file_entries(
+    &self,
+  ) -> impl Iterator<Item = DirEntry> + '_ {
     let entries = self.dir.read_dir().expect("read_dir failed");
     entries
       .into_iter()
       .filter_map(|entry| entry.ok())
       .filter(|entry| entry.file_type().unwrap().is_file())
-      .map(|entry| entry.path())
-      .filter(|path| path.extension().and_then(OsStr::to_str) == Some("ics"))
-      .filter_map(|path| std::fs::read(path).ok())
-      .filter_map(|vec| String::from_utf8(vec).ok())
-      .filter_map(|content| ICal.parse(&self.calendar, &content))
+      .filter(|entry| {
+        entry.path().extension().and_then(OsStr::to_str) == Some("ics")
+      })
   }
 
-  fn event_path(&self, event_id: &EventId) -> PathBuf {
+  pub(crate) fn parse_event<P: AsRef<Path>>(&self, path: P) -> Option<Event> {
+    let content = std::fs::read(path).ok()?;
+    let string = String::from_utf8(content).ok()?;
+    ICal.parse(&self.calendar, &string)
+  }
+
+  fn all_events(&self) -> impl Iterator<Item = Event> + '_ {
+    self
+      .all_event_file_entries()
+      .filter_map(|entry| self.parse_event(entry.path()))
+  }
+
+  pub(crate) fn event_path(&self, event_id: &EventId) -> PathBuf {
     let mut path = self.dir.clone();
     path.push(format!("{}.ics", event_id));
     path

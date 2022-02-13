@@ -1,6 +1,8 @@
+mod indexed_local_dir;
 mod local_dir;
 
-pub use local_dir::*;
+pub use indexed_local_dir::IndexedLocalDir;
+pub use local_dir::{LocalDir, LocalDirBuilder};
 
 use super::event::{Event, EventId};
 use chrono::{DateTime, Local};

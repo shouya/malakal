@@ -18,3 +18,8 @@ uuid = { version = "0.8.2", features = ["v4"] }
 ics = "0.5.7"
 # only for ics parsing
 ical = { version = "0.7.0", features = ["ical"] }
+
+# for webdav support (work in progress)
+# kitchen-fridge = { git = "https://github.com/shouya/kitchen-fridge.git" }
+
+rusqlite = {version = "0.26.3", features = ["chrono", "bundled"] }
