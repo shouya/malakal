@@ -46,22 +46,22 @@ impl IndexedLocalDir {
     conn: &Connection,
     event_id: &str,
   ) -> Result<ICSFileEntry> {
-    conn
-      .query_row(
-        "
+    let mut stmt = conn.prepare_cached(
+      "
 SELECT content_length, modification_date
 FROM events
 WHERE event_id = ?
 LIMIT 1
 ",
-        params![event_id],
-        |row| {
-          Ok(ICSFileEntry {
-            size: row.get(0)?,
-            modified_at: from_unix_timestamp(row.get(1)?),
-          })
-        },
-      )
+    )?;
+
+    stmt
+      .query_row(params![event_id], |row| {
+        Ok(ICSFileEntry {
+          size: row.get(0)?,
+          modified_at: from_unix_timestamp(row.get(1)?),
+        })
+      })
       .map_err(Into::into)
   }
 
