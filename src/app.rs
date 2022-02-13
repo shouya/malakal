@@ -1,6 +1,7 @@
 use chrono::{Date, Local};
 use eframe::{egui, epi};
 
+use crate::util::Result;
 use crate::widget::ScheduleUiState;
 use crate::{backend::Backend, widget};
 
@@ -30,7 +31,7 @@ impl epi::App for App {
       })
     });
 
-    self.apply_changes();
+    self.apply_changes().expect("Failed applying changes");
   }
 }
 
@@ -66,12 +67,12 @@ impl App {
     self.state.request_refresh_events = false;
   }
 
-  fn apply_changes(&mut self) {
+  fn apply_changes(&mut self) -> Result<()> {
     for event in self.state.events.iter() {
       if event.deleted {
-        self.backend.delete_event(&event.id);
+        self.backend.delete_event(&event.id)?;
       } else if event.changed {
-        self.backend.update_event(event);
+        self.backend.update_event(event)?;
       }
     }
 
@@ -80,5 +81,7 @@ impl App {
     for event in self.state.events.iter_mut() {
       event.reset_dirty_flags();
     }
+
+    Ok(())
   }
 }

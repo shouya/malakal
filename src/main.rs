@@ -2,6 +2,7 @@ mod app;
 mod backend;
 mod event;
 mod ical;
+mod util;
 mod widget;
 
 fn main() {
