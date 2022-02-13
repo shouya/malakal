@@ -6,6 +6,8 @@ mod util;
 mod widget;
 
 fn main() {
+  env_logger::init();
+
   let options = eframe::NativeOptions::default();
   let local_backend = backend::LocalDirBuilder::default()
     .calendar("time-blocking")

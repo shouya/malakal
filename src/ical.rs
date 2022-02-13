@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context};
+use anyhow::{bail, ensure};
 use chrono::{DateTime, Duration, Local, Utc};
 use ical::property::Property;
 

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use rusqlite::{params, Connection};
 use std::time::Duration;
 use std::{cell::RefCell, fs::Metadata, path::Path, time::Instant};
@@ -37,6 +37,7 @@ impl IndexedLocalDir {
 
     new_self.create_table()?;
     new_self.force_refresh()?;
+
     Ok(new_self)
   }
 
@@ -160,7 +161,15 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       let event_id = file_stem.to_str().unwrap();
       if let Ok(event_entry) = self.get_single_event_entry(&tx, event_id) {
         let file_size = metadata.len() as usize;
-        let mod_time: DateTime<Utc> = metadata.modified().unwrap().into();
+        let mut mod_time: DateTime<Utc> = metadata
+          .modified()
+          .expect("modification date not available")
+          .into();
+
+        // we only care about second-level modification time
+        mod_time = mod_time
+          .with_nanosecond(0)
+          .expect("failed trimming sub-second units");
 
         if event_entry.size != file_size || event_entry.modified_at < mod_time {
           log::debug!("Updating existing event {:?}", path);
@@ -183,6 +192,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
     for event_id in self.all_event_entry_ids(&tx)? {
       let path = self.backend.event_path(&event_id);
       if !path.exists() {
+        log::debug!("Deleting event {:?}", event_id);
         self.delete_event_entry(&tx, &event_id)?;
       }
     }
