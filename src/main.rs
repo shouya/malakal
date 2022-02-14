@@ -43,14 +43,10 @@ fn main() -> anyhow::Result<()> {
     xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
   )?;
 
-  let mut app = app::App::new(config.calendar_name, today_plus(-1), backend);
+  let mut app = app::App::new(config.calendar_name, 3, backend);
 
   app.load_events();
 
   let options = eframe::NativeOptions::default();
   eframe::run_native(Box::new(app), options);
-}
-
-fn today_plus(offset: i64) -> chrono::Date<chrono::Local> {
-  chrono::Local::today() + chrono::Duration::days(offset)
 }
