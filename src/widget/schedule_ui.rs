@@ -36,7 +36,7 @@ pub struct ScheduleUi {
   day_header_margin_height: f32,
   #[builder(default = "\"%H:%M\"")]
   time_marker_format: &'static str,
-  #[builder(default = "\"%F\"")]
+  #[builder(default = "\"%F %a\"")]
   day_header_format: &'static str,
   #[builder(default = "Local::today()")]
   first_day: Date<Local>,
@@ -631,13 +631,22 @@ impl ScheduleUi {
 
       let text = self.day_header_text(nth_day).expect("day out of bound");
 
-      painter.text(
+      let text_rect = painter.text(
         pos2(x, y) + offset,
         egui::Align2::CENTER_CENTER,
         text,
         egui::TextStyle::Monospace,
         widget_visuals.text_color(),
       );
+
+      if self.first_day + Duration::days(nth_day as i64) == Local::today() {
+        painter.circle(
+          text_rect.center_bottom() + vec2(0.0, 5.0),
+          2.0,
+          Color32::RED,
+          widget_visuals.bg_stroke,
+        );
+      }
     }
 
     // draw the time marks
