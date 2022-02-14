@@ -1,3 +1,6 @@
+use anyhow::Context;
+use serde_derive::Deserialize;
+
 mod app;
 mod backend;
 mod event;
@@ -5,27 +8,46 @@ mod ical;
 mod util;
 mod widget;
 
-fn main() {
+#[derive(Deserialize, Debug)]
+struct Config {
+  calendar_name: String,
+  calendar_location: String,
+}
+
+const APP_NAME: &str = env!("CARGO_PKG_NAME");
+
+fn main() -> anyhow::Result<()> {
   env_logger::init();
 
-  let options = eframe::NativeOptions::default();
+  let xdg = xdg::BaseDirectories::new()?;
+  let config_file = xdg
+    .place_config_file(format!("{APP_NAME}/config.toml"))
+    .with_context(|| "cannot find xdg config directory")?;
+
+  log::info!("Loading config from {}", config_file.display());
+
+  let mut config: Config = toml::from_slice(&std::fs::read(config_file)?)?;
+
+  config.calendar_location = config
+    .calendar_location
+    .replace("~", &std::env::var("HOME")?);
+
+  log::info!("Config loaded {:?}", &config);
+
   let local_backend = backend::LocalDirBuilder::default()
-    .calendar("time-blocking")
-    .dir(format!("{}/.calendar/time-blocking", env!("HOME")))
-    .build()
-    .expect("build backend");
+    .calendar(&config.calendar_name)
+    .dir(&config.calendar_location)
+    .build()?;
   let backend = backend::IndexedLocalDir::new(
     local_backend,
-    format!("{}/.calendar/malakal.db", env!("HOME")),
-  )
-  .expect("load event index file");
+    xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
+  )?;
 
-  backend.create_table().expect("create sqlite table");
-
-  let mut app = app::App::new("time-blocking".into(), today_plus(-1), backend);
+  let mut app = app::App::new(config.calendar_name, today_plus(-1), backend);
 
   app.load_events();
 
+  let options = eframe::NativeOptions::default();
   eframe::run_native(Box::new(app), options);
 }
 
