@@ -1,6 +1,6 @@
 mod layout;
 
-use chrono::{Date, DateTime, Duration, Local};
+use chrono::{Date, DateTime, Duration, Local, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, text::LayoutJob, vec2, Color32, CursorIcon, Label, LayerId, Pos2,
@@ -735,9 +735,14 @@ impl ScheduleUi {
       return None;
     }
     let day = self.first_day + Duration::days(day as i64);
-    let beginning_of_day = day.and_hms(0, 0, 0);
-    let offset = SECS_PER_DAY as usize / self.segment_count * segment;
-    Some(beginning_of_day + Duration::seconds(offset as i64))
+    let seconds = SECS_PER_DAY as usize / self.segment_count * segment;
+    if seconds >= SECS_PER_DAY as usize {
+      (day + Duration::days(1))
+        .and_time(NaiveTime::from_num_seconds_from_midnight(0, 0))
+    } else {
+      let offset = NaiveTime::from_num_seconds_from_midnight(seconds as u32, 0);
+      day.and_time(offset)
+    }
   }
 
   fn desired_size(&self, ui: &Ui) -> Vec2 {
@@ -993,8 +998,7 @@ impl ScheduleUi {
 }
 
 fn day_progress(datetime: &DateTime<Local>) -> f32 {
-  let beginning_of_day = datetime.date().and_hms(0, 0, 0);
-  let seconds_past_midnight = (*datetime - beginning_of_day).num_seconds();
+  let seconds_past_midnight = datetime.num_seconds_from_midnight();
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
 }
 
