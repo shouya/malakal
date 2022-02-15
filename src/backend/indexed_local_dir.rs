@@ -129,7 +129,6 @@ COMMIT;
       .duration_since(std::time::SystemTime::UNIX_EPOCH)?
       .as_secs();
 
-    let t = Instant::now();
     let mut stmt = conn.prepare_cached(
       "
 INSERT INTO events (event_id, start, end, content_length, modification_date)
@@ -146,8 +145,6 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       length,
       modification_timestamp
     ])?;
-
-    log::warn!("{:?}", t.elapsed());
 
     Ok(())
   }

@@ -127,6 +127,7 @@ impl ScheduleUi {
 
       layout.merge(layout::MarkusAlgorithm::compute(events))
     }
+
     layout
   }
 
