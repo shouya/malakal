@@ -637,8 +637,8 @@ impl ScheduleUi {
 
     if let Some(now) = self.current_time.as_ref() {
       let y = day_progress(now) * rect.height();
-      let x0 = rect.left();
-      let x1 = rect.right();
+      let x0 = 0.0;
+      let x1 = rect.width();
 
       let p0 = pos2(x0, y) + offset;
       let p1 = pos2(x1, y) + offset;
