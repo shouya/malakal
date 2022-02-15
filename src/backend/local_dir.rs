@@ -77,6 +77,7 @@ impl Backend for LocalDir {
   fn delete_event(&mut self, event_id: &EventId) -> Result<()> {
     let path = self.event_path(event_id);
     if path.exists() {
+      log::debug!("Removing event {:?}", path);
       std::fs::remove_file(path)?;
     } else {
       // TODO: log
@@ -93,6 +94,7 @@ impl Backend for LocalDir {
       // TODO: show warning
     }
 
+    log::debug!("Updating event {:?}", path);
     std::fs::write(path, ics_content)?;
 
     Ok(())
@@ -102,6 +104,7 @@ impl Backend for LocalDir {
     let ics_content = ICal.generate(event)?;
     let path = self.event_path(&event.id);
 
+    log::debug!("Creating event {:?}", path);
     std::fs::write(path, ics_content)?;
 
     Ok(())

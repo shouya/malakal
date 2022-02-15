@@ -25,7 +25,13 @@ struct ICSFileEntry {
 
 impl IndexedLocalDir {
   pub fn new<P: AsRef<Path>>(backend: LocalDir, index_path: P) -> Result<Self> {
-    let conn = RefCell::new(Connection::open(index_path)?);
+    let conn = Connection::open(index_path)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "temp_store", "memory")?;
+    conn.pragma_update(None, "synchronous", "normal")?;
+    conn.pragma_update(None, "mmap_size", 30_000_000)?;
+
+    let conn = RefCell::new(conn);
     let refresh_interval = Duration::from_secs(60);
     let next_refresh_at = RefCell::new(Instant::now() + refresh_interval);
     let new_self = Self {
@@ -87,8 +93,9 @@ LIMIT 1
 
   pub fn create_table(&self) -> Result<()> {
     log::debug!("Creating index table");
-    self.conn.borrow().execute(
+    self.conn.borrow().execute_batch(
       "
+BEGIN;
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT NOT NULL UNIQUE,
@@ -97,8 +104,11 @@ CREATE TABLE IF NOT EXISTS events (
   content_length INTEGER NOT NULL,
   modification_date INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS events_id ON events (event_id);
+CREATE INDEX IF NOT EXISTS events_start ON events (start);
+COMMIT;
 ",
-      [],
     )?;
 
     Ok(())
@@ -119,15 +129,25 @@ CREATE TABLE IF NOT EXISTS events (
       .duration_since(std::time::SystemTime::UNIX_EPOCH)?
       .as_secs();
 
-    conn.execute(
+    let t = Instant::now();
+    let mut stmt = conn.prepare_cached(
       "
 INSERT INTO events (event_id, start, end, content_length, modification_date)
 VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT(event_id)
 DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 ",
-      params![event_id, start, end, length, modification_timestamp],
     )?;
+
+    stmt.execute(params![
+      event_id,
+      start,
+      end,
+      length,
+      modification_timestamp
+    ])?;
+
+    log::warn!("{:?}", t.elapsed());
 
     Ok(())
   }
@@ -271,7 +291,8 @@ impl Backend for IndexedLocalDir {
   fn update_event(&mut self, event: &Event) -> Result<()> {
     self.backend.update_event(event)?;
     let path = self.backend.event_path(&event.id);
-    self.update_event_entry(&self.conn.borrow(), path)
+    self.update_event_entry(&self.conn.borrow(), path);
+    Ok(())
   }
 
   fn create_event(&mut self, event: &Event) -> Result<()> {
