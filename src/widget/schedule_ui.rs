@@ -291,6 +291,7 @@ impl ScheduleUi {
     ui.output().cursor_icon = CursorIcon::ResizeVertical;
 
     let pointer_pos = self.relative_pointer_pos(ui).unwrap();
+
     if let Some(datetime) = self.pointer_to_datetime_auto(ui, pointer_pos) {
       let updated_time = set_time(datetime);
       self.show_resizer_hint(ui, rect, updated_time);
@@ -600,7 +601,6 @@ impl ScheduleUi {
 
   fn draw_ticks(&self, ui: &mut Ui, rect: Rect) {
     self.draw_grid(ui, rect);
-    self.draw_current_time_indicator(ui, rect);
   }
 
   fn draw_grid(&self, ui: &mut Ui, rect: Rect) {
@@ -630,21 +630,20 @@ impl ScheduleUi {
     }
   }
 
-  fn draw_current_time_indicator(&self, ui: &mut Ui, rect: Rect) {
-    let visuals = ui.style().visuals.clone();
+  fn draw_current_time_indicator(&self, ui: &mut Ui, rect: Rect, alpha: f32) {
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
-    let offset = self.content_offset(rect);
+    let offset = rect.left_top().to_vec2();
 
     if let Some(now) = self.current_time.as_ref() {
-      let y = day_progress(now) * self.content_height();
-      let x0 = -visuals.clip_rect_margin;
-      let x1 = self.content_width();
+      let y = day_progress(now) * rect.height();
+      let x0 = rect.left();
+      let x1 = rect.right();
 
       let p0 = pos2(x0, y) + offset;
       let p1 = pos2(x1, y) + offset;
       let mut indicator_stroke = widget_visuals.bg_stroke;
-      indicator_stroke.color = Color32::RED;
+      indicator_stroke.color = Color32::RED.linear_multiply(alpha);
       painter.line_segment([p0, p1], indicator_stroke);
     }
   }
@@ -662,8 +661,7 @@ impl ScheduleUi {
         self.time_marker_margin_width,
         self.segment_height * self.segment_count as f32,
       ),
-    )
-    .shrink2(vec2(visuals.clip_rect_margin, 0.0));
+    );
 
     let mut alpha = 1.0;
 
@@ -679,7 +677,7 @@ impl ScheduleUi {
     }
 
     painter.rect_filled(
-      time_mark_region,
+      time_mark_region.shrink(visuals.clip_rect_margin),
       widget_visuals.corner_radius,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
@@ -697,6 +695,8 @@ impl ScheduleUi {
         widget_visuals.text_color().linear_multiply(alpha),
       );
     }
+
+    self.draw_current_time_indicator(ui, time_mark_region, alpha);
   }
 
   fn draw_day_marks(&self, ui: &mut Ui, rect: Rect) {
@@ -714,8 +714,7 @@ impl ScheduleUi {
         self.day_width * self.day_count as f32,
         self.day_header_margin_height,
       ),
-    )
-    .shrink(visuals.clip_rect_margin);
+    );
 
     let mut alpha = 1.0;
 
@@ -730,7 +729,7 @@ impl ScheduleUi {
     }
 
     painter.rect_filled(
-      day_mark_region,
+      day_mark_region.shrink(visuals.clip_rect_margin),
       widget_visuals.corner_radius,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
