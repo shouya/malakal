@@ -766,6 +766,7 @@ impl ScheduleUi {
     self.segment_height * self.segment_count as f32
   }
 
+  #[allow(unused)]
   fn content_width(&self) -> f32 {
     self.day_width * self.day_count as f32
   }
