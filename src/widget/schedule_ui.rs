@@ -599,7 +599,11 @@ impl ScheduleUi {
   }
 
   fn draw_ticks(&self, ui: &mut Ui, rect: Rect) {
-    let visuals = ui.style().visuals.clone();
+    self.draw_grid(ui, rect);
+    self.draw_current_time_indicator(ui, rect);
+  }
+
+  fn draw_grid(&self, ui: &mut Ui, rect: Rect) {
     let widget_visuals = ui.style().noninteractive();
 
     let offset = self.content_offset(rect);
@@ -624,48 +628,14 @@ impl ScheduleUi {
 
       painter.line_segment(ends, widget_visuals.bg_stroke);
     }
+  }
 
-    // draw the day marks
-    for nth_day in 0..self.day_count {
-      let y = -(self.day_header_margin_height - visuals.clip_rect_margin) / 2.0;
-      let x = self.day_width * (nth_day as f32 + 0.5);
+  fn draw_current_time_indicator(&self, ui: &mut Ui, rect: Rect) {
+    let visuals = ui.style().visuals.clone();
+    let widget_visuals = ui.style().noninteractive();
+    let painter = ui.painter_at(rect);
+    let offset = self.content_offset(rect);
 
-      let text = self.day_header_text(nth_day).expect("day out of bound");
-
-      let text_rect = painter.text(
-        pos2(x, y) + offset,
-        egui::Align2::CENTER_CENTER,
-        text,
-        egui::TextStyle::Monospace,
-        widget_visuals.text_color(),
-      );
-
-      if self.first_day + Duration::days(nth_day as i64) == Local::today() {
-        painter.circle(
-          text_rect.center_bottom() + vec2(0.0, 5.0),
-          2.0,
-          Color32::RED,
-          widget_visuals.bg_stroke,
-        );
-      }
-    }
-
-    // draw the time marks
-    for seg in 0..=self.segment_count {
-      let y = self.segment_height * seg as f32;
-      let x = -(self.time_marker_margin_width - visuals.clip_rect_margin) / 2.0;
-
-      let text = self.time_marker_text(seg).expect("segment out of bound");
-      painter.text(
-        pos2(x, y) + offset,
-        egui::Align2::CENTER_CENTER,
-        text,
-        egui::TextStyle::Monospace,
-        widget_visuals.text_color(),
-      );
-    }
-
-    // draw current time indicator
     if let Some(now) = self.current_time.as_ref() {
       let y = day_progress(now) * self.content_height();
       let x0 = -visuals.clip_rect_margin;
@@ -676,6 +646,120 @@ impl ScheduleUi {
       let mut indicator_stroke = widget_visuals.bg_stroke;
       indicator_stroke.color = Color32::RED;
       painter.line_segment([p0, p1], indicator_stroke);
+    }
+  }
+
+  fn draw_time_marks(&self, ui: &mut Ui, rect: Rect) {
+    let offset = self.content_offset(rect);
+
+    let visuals = ui.style().visuals.clone();
+    let widget_visuals = ui.style().noninteractive();
+    let painter = ui.painter_at(rect);
+
+    let mut time_mark_region = Rect::from_min_size(
+      rect.left_top() + vec2(0.0, self.day_header_margin_height),
+      vec2(
+        self.time_marker_margin_width,
+        self.segment_height * self.segment_count as f32,
+      ),
+    )
+    .shrink2(vec2(visuals.clip_rect_margin, 0.0));
+
+    let mut alpha = 1.0;
+
+    if time_mark_region.center().x <= ui.clip_rect().left() {
+      // floating time mark region
+      time_mark_region.set_left(ui.clip_rect().left());
+      time_mark_region.set_width(self.time_marker_margin_width);
+
+      alpha = ui.ctx().animate_bool(
+        egui::Id::new("time_mark"),
+        !ui.rect_contains_pointer(time_mark_region),
+      );
+    }
+
+    painter.rect_filled(
+      time_mark_region,
+      widget_visuals.corner_radius,
+      widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
+    );
+
+    for seg in 0..=self.segment_count {
+      let y = offset.y + seg as f32 * self.segment_height;
+      let x = time_mark_region.center().x;
+
+      let text = self.time_marker_text(seg).expect("segment out of bound");
+      painter.text(
+        pos2(x, y),
+        egui::Align2::CENTER_CENTER,
+        text,
+        egui::TextStyle::Monospace,
+        widget_visuals.text_color().linear_multiply(alpha),
+      );
+    }
+  }
+
+  fn draw_day_marks(&self, ui: &mut Ui, rect: Rect) {
+    let visuals = ui.style().visuals.clone();
+    let widget_visuals = ui.style().noninteractive();
+    let painter = ui.painter_at(rect);
+
+    let today_index = self
+      .current_time
+      .map(|t| (t.date() - self.first_day).num_days());
+
+    let mut day_mark_region = Rect::from_min_size(
+      rect.left_top() + vec2(self.time_marker_margin_width, 0.0),
+      vec2(
+        self.day_width * self.day_count as f32,
+        self.day_header_margin_height,
+      ),
+    )
+    .shrink(visuals.clip_rect_margin);
+
+    let mut alpha = 1.0;
+
+    if day_mark_region.center().y <= ui.clip_rect().top() {
+      // floating day mark region
+      day_mark_region.set_top(ui.clip_rect().top());
+      day_mark_region.set_height(self.day_header_margin_height);
+      alpha = ui.ctx().animate_bool(
+        egui::Id::new("day_mark"),
+        !ui.rect_contains_pointer(day_mark_region),
+      );
+    }
+
+    painter.rect_filled(
+      day_mark_region,
+      widget_visuals.corner_radius,
+      widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
+    );
+
+    for nth_day in 0..self.day_count {
+      let x = day_mark_region.left() + (nth_day as f32 + 0.5) * self.day_width;
+
+      let text = self.day_header_text(nth_day).expect("day out of bound");
+
+      let text_rect = painter.text(
+        pos2(x, day_mark_region.center().y),
+        egui::Align2::CENTER_CENTER,
+        text,
+        egui::TextStyle::Monospace,
+        widget_visuals.text_color().linear_multiply(alpha),
+      );
+
+      if Some(nth_day as i64) == today_index {
+        // current day indicator
+        let mut stroke = widget_visuals.bg_stroke;
+        stroke.color = stroke.color.linear_multiply(alpha);
+
+        painter.circle(
+          text_rect.center_bottom() + vec2(0.0, 6.0),
+          2.0,
+          Color32::RED.linear_multiply(alpha),
+          stroke,
+        );
+      }
     }
   }
 
@@ -790,6 +874,9 @@ impl ScheduleUi {
 
       self.add_event(&mut event_overlay_ui, event, &layout);
     }
+
+    self.draw_day_marks(parent_ui, rect);
+    self.draw_time_marks(parent_ui, rect);
 
     let response =
       ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());

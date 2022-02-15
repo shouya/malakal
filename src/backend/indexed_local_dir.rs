@@ -288,7 +288,7 @@ impl Backend for IndexedLocalDir {
   fn update_event(&mut self, event: &Event) -> Result<()> {
     self.backend.update_event(event)?;
     let path = self.backend.event_path(&event.id);
-    self.update_event_entry(&self.conn.borrow(), path);
+    self.update_event_entry(&self.conn.borrow(), path)?;
     Ok(())
   }
 
