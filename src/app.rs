@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use chrono::{Duration, Local};
 use eframe::{egui, epi};
 
@@ -11,6 +13,8 @@ pub struct App {
   backend: Box<dyn Backend>,
 }
 
+static SCROLL: AtomicBool = AtomicBool::new(true);
+
 impl epi::App for App {
   fn name(&self) -> &str {
     "Malakal"
@@ -20,15 +24,11 @@ impl epi::App for App {
     self.refresh_events();
     self.load_events();
 
-    let first_launch_flag_id = egui::Id::new("first_launch");
-    let first_launch: Option<()> =
-      ctx.memory().data.get_temp(first_launch_flag_id);
-    ctx.memory().data.insert_temp(first_launch_flag_id, ());
-
     egui::CentralPanel::default().show(ctx, |ui| {
       let mut scroll_area = egui::ScrollArea::both();
-      let roughly_8am_y = 640.0;
-      if first_launch.is_none() {
+
+      if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
+        let roughly_8am_y = 640.0;
         scroll_area = scroll_area.vertical_scroll_offset(roughly_8am_y);
       }
 
