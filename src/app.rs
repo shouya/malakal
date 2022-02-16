@@ -17,6 +17,9 @@ impl epi::App for App {
   }
 
   fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
+    self.refresh_events();
+    self.load_events();
+
     let first_launch_flag_id = egui::Id::new("first_launch");
     let first_launch: Option<()> =
       ctx.memory().data.get_temp(first_launch_flag_id);
@@ -55,7 +58,8 @@ impl App {
     let state = ScheduleUiState {
       day_count,
       first_day,
-      request_refresh_events: true,
+      scope_updated: true,
+      refresh_requested: false,
       events: vec![],
     };
 
@@ -66,8 +70,23 @@ impl App {
     }
   }
 
+  pub fn refresh_events(&mut self) {
+    if !self.state.refresh_requested {
+      return;
+    }
+
+    self
+      .backend
+      .force_refresh()
+      .expect("failed to reload event");
+
+    self.load_events();
+
+    self.state.refresh_requested = false;
+  }
+
   pub fn load_events(&mut self) {
-    if !self.state.request_refresh_events {
+    if !self.state.scope_updated {
       return;
     }
 
@@ -75,7 +94,8 @@ impl App {
     let end = start + chrono::Duration::days(self.state.day_count as i64);
     let events = self.backend.get_events(start, end).expect("load events");
     self.state.events = events;
-    self.state.request_refresh_events = false;
+
+    self.state.scope_updated = false;
   }
 
   fn apply_event_changes(&mut self) -> Result<()> {

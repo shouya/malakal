@@ -60,7 +60,7 @@ impl LocalDir {
 
 impl Backend for LocalDir {
   fn get_events(
-    &self,
+    &mut self,
     from: chrono::DateTime<chrono::Local>,
     to: chrono::DateTime<chrono::Local>,
   ) -> Result<Vec<Event>> {
@@ -110,7 +110,7 @@ impl Backend for LocalDir {
     Ok(())
   }
 
-  fn get_event(&self, event_id: &EventId) -> Result<Event> {
+  fn get_event(&mut self, event_id: &EventId) -> Result<Event> {
     let path = self.event_path(event_id);
     let buffer = std::fs::read(path)?;
     let string = String::from_utf8(buffer)?;

@@ -14,7 +14,8 @@ use crate::event::{Event, EventBuilder};
 
 pub(crate) struct ScheduleUiState {
   pub events: Vec<Event>,
-  pub request_refresh_events: bool,
+  pub scope_updated: bool,
+  pub refresh_requested: bool,
   pub day_count: usize,
   pub first_day: Date<Local>,
 }
@@ -895,7 +896,8 @@ impl ScheduleUi {
   ) {
     response.clone().context_menu(|ui| {
       if ui.button("Refresh").clicked() {
-        state.request_refresh_events = true;
+        state.refresh_requested = true;
+        state.scope_updated = true;
         ui.label("Refreshing events...");
         ui.close_menu();
       }
@@ -903,12 +905,12 @@ impl ScheduleUi {
       ui.separator();
       if ui.button("3-day view").clicked() {
         state.day_count = 3;
-        state.request_refresh_events = true;
+        state.scope_updated = true;
         ui.close_menu();
       }
       if ui.button("Weekly view").clicked() {
         state.day_count = 7;
-        state.request_refresh_events = true;
+        state.scope_updated = true;
         ui.close_menu();
       }
 
@@ -918,25 +920,25 @@ impl ScheduleUi {
         if ui.button("<<").clicked() {
           state.first_day =
             self.first_day - Duration::days(self.day_count as i64);
-          state.request_refresh_events = true;
+          state.scope_updated = true;
         }
         if ui.button("<").clicked() {
           state.first_day = self.first_day - Duration::days(1);
-          state.request_refresh_events = true;
+          state.scope_updated = true;
         }
         if ui.button("Today").clicked() {
           state.first_day =
             Local::today() - Duration::days(self.day_count as i64 / 2);
-          state.request_refresh_events = true;
+          state.scope_updated = true;
         }
         if ui.button(">").clicked() {
           state.first_day = self.first_day + Duration::days(1);
-          state.request_refresh_events = true;
+          state.scope_updated = true;
         }
         if ui.button(">>").clicked() {
           state.first_day =
             self.first_day + Duration::days(self.day_count as i64);
-          state.request_refresh_events = true;
+          state.scope_updated = true;
         }
       });
 

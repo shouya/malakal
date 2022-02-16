@@ -15,7 +15,7 @@ pub struct IndexedLocalDir {
   backend: LocalDir,
   conn: RefCell<Connection>,
   refresh_interval: Duration,
-  next_refresh_at: RefCell<Instant>,
+  next_refresh_at: Instant,
 }
 
 struct ICSFileEntry {
@@ -33,8 +33,8 @@ impl IndexedLocalDir {
 
     let conn = RefCell::new(conn);
     let refresh_interval = Duration::from_secs(60);
-    let next_refresh_at = RefCell::new(Instant::now() + refresh_interval);
-    let new_self = Self {
+    let next_refresh_at = Instant::now() + refresh_interval;
+    let mut new_self = Self {
       backend,
       conn,
       refresh_interval,
@@ -149,8 +149,8 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
     Ok(())
   }
 
-  fn refresh(&self) {
-    if Instant::now() < *self.next_refresh_at.borrow() {
+  fn refresh(&mut self) {
+    if Instant::now() < self.next_refresh_at {
       return;
     }
 
@@ -158,13 +158,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       log::error!("Failed refreshing {:?}", e);
     }
 
-    *self.next_refresh_at.borrow_mut() = Instant::now() + self.refresh_interval;
-  }
-
-  fn force_refresh(&self) -> Result<()> {
-    self.refresh_updated_files()?;
-    self.refresh_deleted_files()?;
-    Ok(())
+    self.next_refresh_at = Instant::now() + self.refresh_interval;
   }
 
   fn refresh_updated_files(&self) -> Result<()> {
@@ -260,7 +254,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 
 impl Backend for IndexedLocalDir {
   fn get_events(
-    &self,
+    &mut self,
     from: chrono::DateTime<chrono::Local>,
     to: chrono::DateTime<chrono::Local>,
   ) -> Result<Vec<Event>> {
@@ -298,8 +292,14 @@ impl Backend for IndexedLocalDir {
     self.create_event_entry(&self.conn.borrow(), path)
   }
 
-  fn get_event(&self, event_id: &EventId) -> Result<Event> {
+  fn get_event(&mut self, event_id: &EventId) -> Result<Event> {
     self.backend.get_event(event_id)
+  }
+
+  fn force_refresh(&mut self) -> Result<()> {
+    self.refresh_updated_files()?;
+    self.refresh_deleted_files()?;
+    Ok(())
   }
 }
 

@@ -10,11 +10,11 @@ pub use indexed_local_dir::IndexedLocalDir;
 pub use local_dir::{LocalDir, LocalDirBuilder};
 
 pub trait Backend {
-  fn get_event(&self, event_id: &EventId) -> Result<Event>;
+  fn get_event(&mut self, event_id: &EventId) -> Result<Event>;
 
   // get events which overlap with the from..to interval.
   fn get_events(
-    &self,
+    &mut self,
     from: DateTime<Local>,
     to: DateTime<Local>,
   ) -> Result<Vec<Event>>;
@@ -24,4 +24,8 @@ pub trait Backend {
   fn update_event(&mut self, updated_event: &Event) -> Result<()>;
 
   fn create_event(&mut self, event: &Event) -> Result<()>;
+
+  fn force_refresh(&mut self) -> Result<()> {
+    Ok(())
+  }
 }
