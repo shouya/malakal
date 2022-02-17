@@ -1,5 +1,5 @@
 use anyhow::{bail, ensure};
-use chrono::{DateTime, Duration, Local, Utc};
+use chrono::{DateTime, Duration, Utc};
 use ical::property::Property;
 
 use crate::event::{Event, EventBuilder};
@@ -55,15 +55,14 @@ impl ICal {
       p.value
         .ok_or_else(|| anyhow!("property {} doesn't have value", &p.name))
     };
-    let parse_time = |p: Property| -> Result<DateTime<Local>> {
+    let parse_time = |p: Property| -> Result<DateTime<Utc>> {
       let s = value(p.clone())?;
       let tzid = p.params.and_then(|params| {
         params.into_iter().find_map(|(n, v)| {
           (n == "TZID").then(|| ()).and_then(|_| v.into_iter().next())
         })
       });
-      let t = from_timestamp(&s, tzid.as_deref())?;
-      Ok(t.with_timezone(&Local))
+      from_timestamp(&s, tzid.as_deref())
     };
 
     event.calendar(calendar_name);

@@ -1,8 +1,9 @@
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{Timelike, Utc};
 use rusqlite::{params, Connection};
 use std::time::Duration;
 use std::{cell::RefCell, fs::Metadata, path::Path, time::Instant};
 
+use crate::util::DateTime;
 use crate::{
   backend::Backend,
   event::{Event, EventId},
@@ -172,7 +173,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       let event_id = file_stem.to_str().unwrap();
       if let Ok(event_entry) = self.get_single_event_entry(&tx, event_id) {
         let file_size = metadata.len() as usize;
-        let mut mod_time: DateTime<Utc> = metadata
+        let mut mod_time: chrono::DateTime<Utc> = metadata
           .modified()
           .expect("modification date not available")
           .into();
@@ -233,8 +234,8 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 
   fn all_event_entry_ids_between(
     &self,
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
+    from: DateTime,
+    to: DateTime,
   ) -> Result<Vec<EventId>> {
     let start = from.timestamp();
     let end = to.timestamp();
@@ -253,17 +254,10 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 }
 
 impl Backend for IndexedLocalDir {
-  fn get_events(
-    &mut self,
-    from: chrono::DateTime<chrono::Local>,
-    to: chrono::DateTime<chrono::Local>,
-  ) -> Result<Vec<Event>> {
+  fn get_events(&mut self, from: DateTime, to: DateTime) -> Result<Vec<Event>> {
     self.refresh();
 
-    let event_ids = self.all_event_entry_ids_between(
-      from.with_timezone(&Utc),
-      to.with_timezone(&Utc),
-    )?;
+    let event_ids = self.all_event_entry_ids_between(from, to)?;
 
     let events = event_ids.into_iter().filter_map(|id| {
       let path = self.backend.event_path(&id);
@@ -303,8 +297,8 @@ impl Backend for IndexedLocalDir {
   }
 }
 
-fn from_unix_timestamp(i: i64) -> DateTime<Utc> {
+fn from_unix_timestamp(i: i64) -> chrono::DateTime<Utc> {
   use std::time::UNIX_EPOCH;
   let d = UNIX_EPOCH + Duration::from_secs(i as u64);
-  DateTime::<Utc>::from(d)
+  chrono::DateTime::<Utc>::from(d)
 }

@@ -1,4 +1,7 @@
+use std::str::FromStr;
+
 use anyhow::Context;
+use chrono::{Offset, TimeZone, Utc};
 use serde_derive::Deserialize;
 
 mod app;
@@ -12,6 +15,7 @@ mod widget;
 struct Config {
   calendar_name: String,
   calendar_location: String,
+  timezone: Option<String>,
 }
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -34,6 +38,15 @@ fn main() -> anyhow::Result<()> {
 
   log::info!("Config loaded {:?}", &config);
 
+  let timezone = if let Some(tz) = config.timezone {
+    chrono_tz::Tz::from_str(&tz)
+      .map_err(|x| anyhow::anyhow!("{}", x))?
+      .offset_from_utc_datetime(&Utc::now().naive_utc())
+      .fix()
+  } else {
+    util::now().offset().fix()
+  };
+
   let local_backend = backend::LocalDirBuilder::default()
     .calendar(&config.calendar_name)
     .dir(&config.calendar_location)
@@ -43,7 +56,7 @@ fn main() -> anyhow::Result<()> {
     xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
   )?;
 
-  let mut app = app::App::new(config.calendar_name, 3, backend);
+  let mut app = app::App::new(config.calendar_name, 3, timezone, backend);
 
   app.load_events();
 

@@ -1,6 +1,6 @@
 mod layout;
 
-use chrono::{Date, DateTime, Duration, Local, NaiveTime, Timelike};
+use chrono::{Duration, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, text::LayoutJob, vec2, Color32, CursorIcon, Label, LayerId, Pos2,
@@ -10,14 +10,17 @@ use uuid::Uuid;
 
 use layout::{Layout, LayoutAlgorithm};
 
-use crate::event::{Event, EventBuilder};
+use crate::{
+  event::{Event, EventBuilder},
+  util::{now, today, Date, DateTime},
+};
 
 pub(crate) struct ScheduleUiState {
   pub events: Vec<Event>,
   pub scope_updated: bool,
   pub refresh_requested: bool,
   pub day_count: usize,
-  pub first_day: Date<Local>,
+  pub first_day: Date,
 }
 
 #[derive(Builder, Clone, Debug, PartialEq)]
@@ -39,8 +42,8 @@ pub struct ScheduleUi {
   time_marker_format: &'static str,
   #[builder(default = "\"%F %a\"")]
   day_header_format: &'static str,
-  #[builder(default = "Local::today()")]
-  first_day: Date<Local>,
+  #[builder(default = "today()")]
+  first_day: Date,
 
   // a small margin on the right of day columns reserved for creating
   // new events
@@ -48,8 +51,8 @@ pub struct ScheduleUi {
   new_event_margin: f32,
 
   // used to render current time indicator
-  #[builder(default = "Some(Local::now())")]
-  current_time: Option<DateTime<Local>>,
+  #[builder(default = "Some(now())")]
+  current_time: Option<DateTime>,
 
   // used to refresh every second
   #[builder(default = "std::time::Instant::now()", setter(skip))]
@@ -82,11 +85,11 @@ struct DraggingEventYOffset(f32);
 
 #[derive(Debug)]
 enum EventLayoutType {
-  Single(Date<Local>, [f32; 2]),
+  Single(Date, [f32; 2]),
   #[allow(unused)]
-  AllDay([Date<Local>; 2]),
+  AllDay([Date; 2]),
   #[allow(unused)]
-  Multi([DateTime<Local>; 2]),
+  Multi([DateTime; 2]),
 }
 
 const SECS_PER_DAY: u64 = 24 * 3600;
@@ -335,7 +338,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    set_time: impl FnOnce(DateTime<Local>) -> DateTime<Local>,
+    set_time: impl FnOnce(DateTime) -> DateTime,
   ) -> Option<bool> {
     if !ui.memory().is_anything_being_dragged() {
       return Some(true);
@@ -357,7 +360,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    set_time: impl FnOnce(DateTime<Local>) -> (DateTime<Local>, DateTime<Local>),
+    set_time: impl FnOnce(DateTime) -> (DateTime, DateTime),
   ) -> Option<bool> {
     if !ui.memory().is_anything_being_dragged() {
       return Some(true);
@@ -540,7 +543,7 @@ impl ScheduleUi {
     None
   }
 
-  fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime<Local>) {
+  fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime) {
     let layer_id = egui::Id::new("resizer_hint");
     let layer = LayerId::new(egui::Order::Tooltip, layer_id);
 
@@ -555,7 +558,7 @@ impl ScheduleUi {
   // 1. event end must be later than event start
   // 2. event duration must be at least self.min_event_duration long
   // 3. event date can't be changed
-  fn move_event_start(&self, event: &mut Event, new_start: DateTime<Local>) {
+  fn move_event_start(&self, event: &mut Event, new_start: DateTime) {
     if event.end < new_start + self.min_event_duration {
       return;
     }
@@ -570,7 +573,7 @@ impl ScheduleUi {
     }
   }
 
-  fn move_event_end(&self, event: &mut Event, new_end: DateTime<Local>) {
+  fn move_event_end(&self, event: &mut Event, new_end: DateTime) {
     if new_end < event.start + self.min_event_duration {
       return;
     }
@@ -585,7 +588,7 @@ impl ScheduleUi {
     }
   }
 
-  fn move_event(&self, event: &mut Event, new_start: DateTime<Local>) {
+  fn move_event(&self, event: &mut Event, new_start: DateTime) {
     let duration = event.end - event.start;
     let new_end = new_start + duration;
 
@@ -600,7 +603,7 @@ impl ScheduleUi {
     }
   }
 
-  fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime<Local>> {
+  fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime> {
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -621,7 +624,7 @@ impl ScheduleUi {
   fn pointer_pos_to_datetime_snapping(
     &self,
     rel_pos: Pos2,
-  ) -> Option<DateTime<Local>> {
+  ) -> Option<DateTime> {
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -663,7 +666,7 @@ impl ScheduleUi {
     [upper_resizer, lower_resizer]
   }
 
-  fn date_to_day(&self, date: Date<Local>) -> Option<usize> {
+  fn date_to_day(&self, date: Date) -> Option<usize> {
     let diff_days = (date - self.first_day).num_days();
     if diff_days < 0 || diff_days >= self.day_count as i64 {
       return None;
@@ -882,11 +885,7 @@ impl ScheduleUi {
     Some(format!("{formatted_time}"))
   }
 
-  fn time_marker_time(
-    &self,
-    segment: usize,
-    day: usize,
-  ) -> Option<DateTime<Local>> {
+  fn time_marker_time(&self, segment: usize, day: usize) -> Option<DateTime> {
     if segment > self.segment_count {
       return None;
     }
@@ -1015,8 +1014,7 @@ impl ScheduleUi {
           state.scope_updated = true;
         }
         if ui.button("Today").clicked() {
-          state.first_day =
-            Local::today() - Duration::days(self.day_count as i64 / 2);
+          state.first_day = today() - Duration::days(self.day_count as i64 / 2);
           state.scope_updated = true;
         }
         if ui.button(">").clicked() {
@@ -1108,11 +1106,7 @@ impl ScheduleUi {
     new_event
   }
 
-  fn pointer_to_datetime_auto(
-    &self,
-    ui: &Ui,
-    pos: Pos2,
-  ) -> Option<DateTime<Local>> {
+  fn pointer_to_datetime_auto(&self, ui: &Ui, pos: Pos2) -> Option<DateTime> {
     if ui.input().modifiers.shift_only() {
       // no snapping when shift is held down
       self.pointer_pos_to_datetime(pos)
@@ -1135,7 +1129,7 @@ impl ScheduleUi {
   fn assign_new_event_dates(
     &self,
     ui: &Ui,
-    init_time: DateTime<Local>,
+    init_time: DateTime,
     event: &mut Event,
   ) -> Option<FocusedEventState> {
     use FocusedEventState::{DraggingEventEnd, DraggingEventStart};
@@ -1178,11 +1172,11 @@ impl ScheduleUi {
     }
   }
 
-  pub fn scroll_position(&self, time: &DateTime<Local>) -> f32 {
+  pub fn scroll_position(&self, time: &DateTime) -> f32 {
     self.date_time_to_pos(time).y
   }
 
-  fn date_time_to_pos(&self, time: &DateTime<Local>) -> Pos2 {
+  fn date_time_to_pos(&self, time: &DateTime) -> Pos2 {
     let x = (time.date() - self.first_day).num_days() as f32 / self.day_width
       + self.time_marker_margin_width;
     let y = day_progress(time) * self.content_height()
@@ -1191,7 +1185,7 @@ impl ScheduleUi {
   }
 }
 
-fn day_progress(datetime: &DateTime<Local>) -> f32 {
+fn day_progress(datetime: &DateTime) -> f32 {
   let seconds_past_midnight = datetime.num_seconds_from_midnight();
   (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
 }
@@ -1213,7 +1207,7 @@ fn new_event_id() -> EventId {
   format!("{}", Uuid::new_v4().to_hyphenated())
 }
 
-fn on_the_same_day(mut t1: DateTime<Local>, mut t2: DateTime<Local>) -> bool {
+fn on_the_same_day(mut t1: DateTime, mut t2: DateTime) -> bool {
   if t1.date() == t2.date() {
     return true;
   }
@@ -1231,7 +1225,7 @@ fn on_the_same_day(mut t1: DateTime<Local>, mut t2: DateTime<Local>) -> bool {
 }
 
 // return if the times were been swapped
-fn reorder_times(t1: &mut DateTime<Local>, t2: &mut DateTime<Local>) -> bool {
+fn reorder_times(t1: &mut DateTime, t2: &mut DateTime) -> bool {
   if t1 < t2 {
     return false;
   }

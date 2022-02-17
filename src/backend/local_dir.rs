@@ -1,5 +1,4 @@
 use anyhow::Context;
-use chrono::DateTime;
 use derive_builder::Builder;
 use std::{
   ffi::OsStr,
@@ -11,7 +10,7 @@ use crate::{
   backend::Backend,
   event::{Event, EventId},
   ical::ICal,
-  util::Result,
+  util::{DateTime, Result},
 };
 
 #[derive(Builder)]
@@ -59,11 +58,7 @@ impl LocalDir {
 }
 
 impl Backend for LocalDir {
-  fn get_events(
-    &mut self,
-    from: chrono::DateTime<chrono::Local>,
-    to: chrono::DateTime<chrono::Local>,
-  ) -> Result<Vec<Event>> {
+  fn get_events(&mut self, from: DateTime, to: DateTime) -> Result<Vec<Event>> {
     let mut events = vec![];
     for event in self.all_events() {
       if event_visible_in_range(&event, from, to) {
@@ -119,10 +114,6 @@ impl Backend for LocalDir {
   }
 }
 
-fn event_visible_in_range(
-  e: &Event,
-  start: DateTime<chrono::Local>,
-  end: DateTime<chrono::Local>,
-) -> bool {
+fn event_visible_in_range(e: &Event, start: DateTime, end: DateTime) -> bool {
   e.start.max(start) <= e.end.min(end)
 }

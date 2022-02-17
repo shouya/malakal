@@ -1,9 +1,9 @@
 use std::sync::atomic::AtomicBool;
 
-use chrono::{Duration, Local};
+use chrono::{Duration, FixedOffset};
 use eframe::{egui, epi};
 
-use crate::util::Result;
+use crate::util::{now, today, Result};
 use crate::widget::ScheduleUiState;
 use crate::{backend::Backend, widget};
 
@@ -11,6 +11,7 @@ pub struct App {
   calendar: String,
   state: widget::ScheduleUiState,
   backend: Box<dyn Backend>,
+  timezone: FixedOffset,
 }
 
 static SCROLL: AtomicBool = AtomicBool::new(true);
@@ -35,7 +36,7 @@ impl epi::App for App {
       let mut scroll_area = egui::ScrollArea::both();
 
       if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
-        let now = scheduler.scroll_position(&Local::now());
+        let now = scheduler.scroll_position(&now());
         scroll_area = scroll_area.vertical_scroll_offset(now);
       }
 
@@ -50,9 +51,10 @@ impl App {
   pub fn new(
     calendar: String,
     day_count: usize,
+    timezone: FixedOffset,
     backend: impl Backend + 'static,
   ) -> Self {
-    let first_day = Local::today() - Duration::days(day_count as i64 / 2);
+    let first_day = today() - Duration::days(day_count as i64 / 2);
 
     let state = ScheduleUiState {
       day_count,
@@ -65,6 +67,7 @@ impl App {
     Self {
       calendar,
       state,
+      timezone,
       backend: Box::new(backend),
     }
   }
@@ -91,7 +94,11 @@ impl App {
 
     let start = self.state.first_day.and_hms(0, 0, 0);
     let end = start + chrono::Duration::days(self.state.day_count as i64);
-    let events = self.backend.get_events(start, end).expect("load events");
+    let mut events = self.backend.get_events(start, end).expect("load events");
+    events
+      .iter_mut()
+      .for_each(|ev| ev.set_timezone(&self.timezone));
+
     self.state.events = events;
 
     self.state.scope_updated = false;
