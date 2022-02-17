@@ -17,6 +17,11 @@ pub(crate) fn utc_now() -> DateTime {
   now.with_timezone(&now.offset().fix())
 }
 
+pub(crate) fn local_tz() -> FixedOffset {
+  let now = Local::now();
+  now.offset().fix()
+}
+
 pub(crate) fn local_now() -> DateTime {
   let now = Local::now();
   now.with_timezone(now.offset())
