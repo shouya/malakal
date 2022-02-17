@@ -28,9 +28,6 @@ pub struct Event {
   #[builder(default = "[0.3; 3]")]
   pub color: [f32; 3],
 
-  #[builder(default, setter(skip))]
-  pub(crate) updated_title: Option<String>,
-
   #[builder(default = "false", setter(skip))]
   pub(crate) deleted: bool,
 
@@ -52,9 +49,5 @@ impl Event {
   pub(crate) fn reset_dirty_flags(&mut self) {
     self.deleted = false;
     self.changed = false;
-  }
-
-  pub(crate) fn is_editing(&self) -> bool {
-    self.updated_title.is_some()
   }
 }

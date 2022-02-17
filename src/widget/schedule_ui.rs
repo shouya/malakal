@@ -91,6 +91,56 @@ enum EventLayoutType {
 
 const SECS_PER_DAY: u64 = 24 * 3600;
 
+#[derive(Clone, Debug)]
+struct InteractingEvent {
+  event: Event,
+  state: FocusedEventState,
+}
+
+impl InteractingEvent {
+  fn id() -> egui::Id {
+    egui::Id::new("interacting_event")
+  }
+
+  fn get(ui: &Ui) -> Option<Self> {
+    ui.memory().data.get_temp(Self::id())
+  }
+
+  fn set(ui: &Ui, event: Event, state: FocusedEventState) {
+    let value = InteractingEvent { event, state };
+    ui.memory().data.insert_temp(Self::id(), value)
+  }
+
+  fn save(self, ui: &Ui) {
+    Self::set(ui, self.event.clone(), self.state)
+  }
+
+  fn discard(ui: &Ui) {
+    debug_assert!(Self::get(ui).is_some());
+
+    ui.memory().data.remove::<Self>(Self::id())
+  }
+
+  fn commit(self, ui: &Ui) {
+    ui.memory().data.insert_temp(Self::id(), self.event);
+    Self::discard(ui);
+  }
+
+  fn get_commited_event(ui: &Ui) -> Option<Event> {
+    let event = ui.memory().data.get_temp(Self::id());
+    ui.memory().data.remove::<Event>(Self::id());
+    event
+  }
+
+  fn get_id(ui: &Ui, id: &EventId) -> Option<Self> {
+    Self::get(ui).and_then(|value| (&value.event.id == id).then(|| value))
+  }
+
+  fn get_event(ui: &Ui) -> Option<Event> {
+    Self::get(ui).map(|v| v.event)
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FocusedEventState {
   Editing,
@@ -107,11 +157,22 @@ fn one_day() -> Duration {
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events<'a>(&self, events: &'a [Event]) -> Layout {
+  fn layout_events(
+    &self,
+    events: &[Event],
+    interacting: &Option<Event>,
+  ) -> Layout {
     let mut layout = Layout::default();
+    let mut events = events.to_vec();
+
+    if let Some(ev) = interacting.clone().take() {
+      events.retain(|x| x.id != ev.id);
+      events.insert(0, ev);
+    }
+
     for day in 0..self.day_count {
       // layout for each day
-      let events: Vec<layout::Ev<'a>> = events
+      let events: Vec<layout::Ev> = events
         .iter()
         .filter(|&e| !e.deleted)
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
@@ -132,19 +193,21 @@ impl ScheduleUi {
     layout
   }
 
-  fn add_event(
+  fn event_rect(
     &self,
-    ui: &mut Ui,
-    event: &mut Event,
+    ui: &Ui,
     layout: &Layout,
-  ) -> Option<Response> {
+    event: &Event,
+  ) -> Option<Rect> {
     let widget_rect = ui.max_rect();
     match layout_type(event) {
       EventLayoutType::Single(date, y) => {
         let rel_x = layout.query(&event.id)?;
         let day = self.date_to_day(date)?;
-        let event_rect = self.layout_event(widget_rect, day, y, rel_x);
-        self.put_event_block(ui, event, event_rect)
+        let rect = self.layout_event(widget_rect, day, y, rel_x);
+        let margin = ui.style().visuals.clip_rect_margin / 2.0;
+
+        Some(rect.shrink(margin))
       }
       _ => unimplemented!(),
     }
@@ -174,27 +237,6 @@ impl ScheduleUi {
     rect.translate(self.content_offset(widget_rect))
   }
 
-  fn event_interaction_state(
-    &self,
-    id: egui::Id,
-    ui: &mut Ui,
-  ) -> Option<FocusedEventState> {
-    ui.memory().data.get_temp(id)
-  }
-
-  fn set_event_interaction_state(
-    &self,
-    id: egui::Id,
-    ui: &mut Ui,
-    state: Option<FocusedEventState>,
-  ) {
-    if let Some(state) = state {
-      ui.memory().data.insert_temp(id, state);
-    } else {
-      ui.memory().data.remove::<FocusedEventState>(id);
-    }
-  }
-
   fn interact_event_region(
     &self,
     ui: &mut Ui,
@@ -205,12 +247,16 @@ impl ScheduleUi {
 
     let _lmb = egui::PointerButton::Primary;
 
+    if resp.clicked_by(egui::PointerButton::Primary) {
+      return Some(FocusedEventState::Editing);
+    }
+
     let interact_pos =
       resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
 
     if upper.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventStart);
       }
       return None;
@@ -218,7 +264,7 @@ impl ScheduleUi {
 
     if lower.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventEnd);
       }
       return None;
@@ -227,11 +273,7 @@ impl ScheduleUi {
     if event_rect.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::Grab;
 
-      if resp.clicked_by(egui::PointerButton::Primary) {
-        return Some(FocusedEventState::Editing);
-      }
-
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
         let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
         ui.memory().data.insert_temp(egui::Id::null(), offset);
         return Some(FocusedEventState::Dragging);
@@ -243,18 +285,17 @@ impl ScheduleUi {
     None
   }
 
-  // return None if the interaction is finished
   fn interact_event(
     &self,
     ui: &mut Ui,
     event_rect: Rect,
     state: FocusedEventState,
     event: &mut Event,
-  ) -> Option<Response> {
+  ) -> (Response, Option<bool>) {
     let [upper, lower] = self.event_resizer_regions(event_rect);
 
     let resp = self.place_event_button(ui, event_rect, event);
-    let active = match state {
+    let commit = match state {
       FocusedEventState::DraggingEventStart => {
         self.handle_event_resizing(ui, upper, |time| {
           self.move_event_start(event, time);
@@ -276,7 +317,7 @@ impl ScheduleUi {
       FocusedEventState::Editing => unreachable!(),
     };
 
-    active.then(|| resp)
+    (resp, commit)
   }
 
   fn handle_event_resizing(
@@ -284,9 +325,9 @@ impl ScheduleUi {
     ui: &mut Ui,
     rect: Rect,
     set_time: impl FnOnce(DateTime<Local>) -> DateTime<Local>,
-  ) -> bool {
+  ) -> Option<bool> {
     if !ui.memory().is_anything_being_dragged() {
-      return false;
+      return Some(true);
     }
 
     ui.output().cursor_icon = CursorIcon::ResizeVertical;
@@ -298,7 +339,7 @@ impl ScheduleUi {
       self.show_resizer_hint(ui, rect, updated_time);
     }
 
-    true
+    None
   }
 
   fn handle_event_dragging(
@@ -306,9 +347,9 @@ impl ScheduleUi {
     ui: &mut Ui,
     rect: Rect,
     set_time: impl FnOnce(DateTime<Local>) -> (DateTime<Local>, DateTime<Local>),
-  ) -> bool {
+  ) -> Option<bool> {
     if !ui.memory().is_anything_being_dragged() {
-      return false;
+      return Some(true);
     }
 
     ui.output().cursor_icon = CursorIcon::Grabbing;
@@ -329,43 +370,62 @@ impl ScheduleUi {
       self.show_resizer_hint(ui, lower, end);
     }
 
-    true
+    None
   }
 
-  fn put_event_block(
+  fn put_non_interacting_event_block(
     &self,
     ui: &mut Ui,
-    event: &mut Event,
-    event_rect: Rect,
+    layout: &Layout,
+    orig_event: &mut Event,
   ) -> Option<Response> {
-    let event_rect =
-      event_rect.shrink(ui.style().visuals.clip_rect_margin / 2.0);
-    let id = event_egui_id(event);
+    let event_rect = self.event_rect(ui, layout, orig_event)?;
 
-    let interaction_state = self.event_interaction_state(id, ui);
+    let resp = self.place_event_button(ui, event_rect, orig_event);
+    if let Some(state) = self.interact_event_region(ui, resp) {
+      InteractingEvent::set(ui, orig_event.clone(), state)
+    }
 
-    match interaction_state {
-      None => {
-        let resp = self.place_event_button(ui, event_rect, event);
-        if let Some(state) = self.interact_event_region(ui, resp) {
-          self.set_event_interaction_state(id, ui, Some(state));
-        }
-      }
-      Some(FocusedEventState::Editing) => {
-        if self.place_event_editor(ui, event_rect, event).is_none() {
-          self.set_event_interaction_state(id, ui, None);
-        }
-      }
-      Some(state) => match self.interact_event(ui, event_rect, state, event) {
-        None => self.set_event_interaction_state(id, ui, None),
-        Some(resp) => {
-          if let Some(new_state) = self.interact_event_region(ui, resp) {
-            let final_state = state_override(state, new_state);
-            self.set_event_interaction_state(id, ui, Some(final_state));
-          }
-        }
+    None
+  }
+
+  fn put_interacting_event_block(
+    &self,
+    ui: &mut Ui,
+    layout: &Layout,
+  ) -> Option<Response> {
+    use FocusedEventState::*;
+
+    let mut ie = InteractingEvent::get(ui)?;
+    let event_rect = self.event_rect(ui, layout, &ie.event)?;
+
+    match ie.state {
+      Editing => match self.place_event_editor(ui, event_rect, &mut ie.event) {
+        None => ie.save(ui),
+        Some(true) => ie.commit(ui),
+        Some(false) => InteractingEvent::discard(ui),
       },
-    };
+      _ => {
+        let event_rect = self.event_rect(ui, layout, &ie.event)?;
+
+        let (resp, commit) =
+          self.interact_event(ui, event_rect, ie.state, &mut ie.event);
+
+        match commit {
+          None => {
+            // two possibilities:
+            // 1. a brief click
+            // 2. really dragging something
+            if let Some(new_state) = self.interact_event_region(ui, resp) {
+              ie.state = state_override(ie.state, new_state);
+            }
+            ie.save(ui)
+          }
+          Some(true) => ie.commit(ui),
+          Some(false) => InteractingEvent::discard(ui),
+        }
+      }
+    }
 
     None
   }
@@ -431,18 +491,16 @@ impl ScheduleUi {
     (galley, false)
   }
 
+  // Some(true) => commit change
+  // Some(false) => discard change
+  // None => still editing
   fn place_event_editor(
     &self,
     ui: &mut Ui,
     rect: Rect,
     event: &mut Event,
-  ) -> Option<()> {
-    event
-      .updated_title
-      .get_or_insert_with(|| event.title.clone());
-
-    let editor =
-      egui::TextEdit::singleline(event.updated_title.as_mut().unwrap());
+  ) -> Option<bool> {
+    let editor = egui::TextEdit::singleline(&mut event.title);
     let resp = ui.put(rect, editor);
 
     // Anything dragging outside the textedit should be equivalent to
@@ -455,17 +513,15 @@ impl ScheduleUi {
     // We cannot use key_released here, because it will be taken
     // precedence by resp.lost_focus() and commit the change.
     if ui.input().key_pressed(egui::Key::Escape) {
-      discard_event_title(event);
-      return None;
+      return Some(false);
     }
 
     if resp.lost_focus() || resp.clicked_elsewhere() || anything_else_dragging {
-      change_event_title(event);
-      return None;
+      return Some(true);
     }
 
     resp.request_focus();
-    Some(())
+    None
   }
 
   fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime<Local>) {
@@ -856,35 +912,50 @@ impl ScheduleUi {
   ) {
     let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
 
-    if parent_ui.is_rect_visible(rect) {
-      self.draw_ticks(parent_ui, rect);
+    if !parent_ui.is_rect_visible(rect) {
+      return;
     }
-
-    let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
 
     self.regularize_events(&mut state.events);
 
-    let layout = self.layout_events(&state.events);
+    let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
+    self.draw_ticks(&mut ui, rect);
 
-    let mut event_overlay_ui = ui.child_ui(rect, egui::Layout::left_to_right());
+    let interacting_event = InteractingEvent::get_event(&ui);
+    let interacting_event_id = interacting_event.as_ref().map(|x| x.id.clone());
 
+    let layout = self.layout_events(&state.events, &interacting_event);
+
+    let mut interacting_event_shown = false;
     for event in state.events.iter_mut() {
       if event.deleted {
         continue;
       }
 
-      self.add_event(&mut event_overlay_ui, event, &layout);
+      if interacting_event_id.as_ref() == Some(&event.id) {
+        self.put_interacting_event_block(&mut ui, &layout);
+        interacting_event_shown = true;
+      } else {
+        self.put_non_interacting_event_block(&mut ui, &layout, event);
+      }
     }
 
-    self.draw_day_marks(parent_ui, rect);
-    self.draw_time_marks(parent_ui, rect);
+    if interacting_event_id.is_some() && !interacting_event_shown {
+      self.put_interacting_event_block(&mut ui, &layout);
+    }
+
+    self.draw_day_marks(&mut ui, rect);
+    self.draw_time_marks(&mut ui, rect);
 
     let response =
       ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
 
-    self.handle_new_event(&mut ui, &mut state.events, &response);
+    self.handle_new_event(&mut ui, &response);
     self.handle_context_menu(&mut ui, state, &response);
 
+    if let Some(event) = InteractingEvent::get_commited_event(&ui) {
+      commit_updated_event(&mut state.events, event);
+    }
     remove_empty_events(&mut state.events);
   }
 
@@ -950,13 +1021,8 @@ impl ScheduleUi {
     });
   }
 
-  fn handle_new_event(
-    &self,
-    ui: &mut Ui,
-    events: &mut Vec<Event>,
-    response: &Response,
-  ) -> Option<()> {
-    use FocusedEventState::{DraggingEventEnd, Editing};
+  fn handle_new_event(&self, ui: &mut Ui, response: &Response) -> Option<()> {
+    use FocusedEventState::Editing;
 
     let id = response.id;
 
@@ -966,33 +1032,31 @@ impl ScheduleUi {
       let mut event = self.new_event();
       let pointer_pos = self.relative_pointer_pos(ui)?;
       let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
-
-      self.assign_new_event_dates(ui, init_time, &mut event)?;
+      let new_state = self.assign_new_event_dates(ui, init_time, &mut event)?;
 
       ui.memory().data.insert_temp(id, event.id.clone());
       ui.memory().data.insert_temp(id, init_time);
 
-      ui.memory()
-        .data
-        .insert_temp(event_egui_id(&event), DraggingEventEnd);
-      events.push(event);
+      InteractingEvent::set(ui, event, new_state);
+
       return Some(());
     }
 
     if response.drag_released() {
       let event_id = ui.memory().data.get_temp(id)?;
-      let event = find_event_mut(events, &event_id)?;
-      ui.memory().data.insert_temp(event_egui_id(event), Editing);
-      ui.memory().data.remove::<Event>(id);
-      return Some(());
+      let mut value = InteractingEvent::get_id(ui, &event_id)?;
+      value.state = Editing;
+      value.save(ui);
     }
 
     if response.dragged() && response.dragged_by(egui::PointerButton::Primary) {
-      let event_id = ui.memory().data.get_temp(id)?;
-      let event = find_event_mut(events, &event_id)?;
+      let event_id: String = ui.memory().data.get_temp(id)?;
       let init_time = ui.memory().data.get_temp(id)?;
-      let state = self.assign_new_event_dates(ui, init_time, event)?;
-      ui.memory().data.insert_temp(event_egui_id(event), state);
+      let mut value = InteractingEvent::get_id(ui, &event_id)?;
+      let new_state =
+        self.assign_new_event_dates(ui, init_time, &mut value.event)?;
+      value.state = new_state;
+      value.save(ui);
     }
 
     Some(())
@@ -1011,7 +1075,6 @@ impl ScheduleUi {
       .build()
       .unwrap();
 
-    event.updated_title = Some("".into());
     event.mark_changed();
     event
   }
@@ -1109,10 +1172,6 @@ fn state_override(
   old_state
 }
 
-fn event_egui_id(event: &Event) -> egui::Id {
-  egui::Id::new("event").with(&event.id)
-}
-
 fn new_event_id() -> EventId {
   format!("{}", Uuid::new_v4().to_hyphenated())
 }
@@ -1143,18 +1202,28 @@ fn reorder_times(t1: &mut DateTime<Local>, t2: &mut DateTime<Local>) -> bool {
   true
 }
 
-fn find_event_mut<'a>(
-  events: &'a mut Vec<Event>,
-  id: &EventId,
-) -> Option<&'a mut Event> {
-  events.iter_mut().find(|x| x.id == *id)
-}
-
 fn remove_empty_events(events: &mut Vec<Event>) {
   for event in events.iter_mut() {
-    if event.updated_title.is_none() && event.title.is_empty() {
+    if event.title.is_empty() {
       event.mark_deleted();
     }
+  }
+}
+
+fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
+  let mut updated = false;
+
+  for event in events.iter_mut() {
+    if event.id == commited_event.id {
+      event.mark_changed();
+      *event = commited_event.clone();
+      updated = true;
+    }
+  }
+
+  if !updated {
+    commited_event.mark_changed();
+    events.push(commited_event);
   }
 }
 
@@ -1175,18 +1244,4 @@ fn layout_type(event: &Event) -> EventLayoutType {
   }
 
   unimplemented!()
-}
-
-fn change_event_title(event: &mut Event) {
-  if let Some(mut new_title) = event.updated_title.take() {
-    new_title = new_title.trim().into();
-    if !new_title.is_empty() && event.title != new_title {
-      event.mark_changed();
-      event.title = new_title;
-    }
-  }
-}
-
-fn discard_event_title(event: &mut Event) {
-  event.updated_title.take();
 }
