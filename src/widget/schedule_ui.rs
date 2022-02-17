@@ -147,6 +147,7 @@ enum FocusedEventState {
   Dragging,
   DraggingEventStart,
   DraggingEventEnd,
+  EventCloning,
 }
 
 // can't be a constant because chrono::Duration constructors are not
@@ -242,6 +243,7 @@ impl ScheduleUi {
     ui: &mut Ui,
     resp: Response,
   ) -> Option<FocusedEventState> {
+    use FocusedEventState::*;
     let event_rect = resp.rect;
     let [upper, lower] = self.event_resizer_regions(event_rect);
 
@@ -251,13 +253,13 @@ impl ScheduleUi {
       resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
 
     if resp.clicked_by(egui::PointerButton::Primary) {
-      return Some(FocusedEventState::Editing);
+      return Some(Editing);
     }
 
     if upper.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
       if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
-        return Some(FocusedEventState::DraggingEventStart);
+        return Some(DraggingEventStart);
       }
       return None;
     }
@@ -265,7 +267,7 @@ impl ScheduleUi {
     if lower.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
       if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
-        return Some(FocusedEventState::DraggingEventEnd);
+        return Some(DraggingEventEnd);
       }
       return None;
     }
@@ -273,10 +275,19 @@ impl ScheduleUi {
     if event_rect.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::Grab;
 
+      if resp.drag_started()
+        && resp.dragged_by(egui::PointerButton::Primary)
+        && ui.input().modifiers.ctrl
+      {
+        let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
+        ui.memory().data.insert_temp(egui::Id::null(), offset);
+        return Some(EventCloning);
+      }
+
       if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
         ui.memory().data.insert_temp(egui::Id::null(), offset);
-        return Some(FocusedEventState::Dragging);
+        return Some(Dragging);
       }
 
       return None;
@@ -314,7 +325,7 @@ impl ScheduleUi {
           (event.start, event.end)
         })
       }
-      FocusedEventState::Editing => unreachable!(),
+      _ => unreachable!(),
     };
 
     (resp, commit)
@@ -377,13 +388,18 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     layout: &Layout,
-    orig_event: &mut Event,
+    event: &mut Event,
   ) -> Option<Response> {
-    let event_rect = self.event_rect(ui, layout, orig_event)?;
+    let event_rect = self.event_rect(ui, layout, event)?;
 
-    let resp = self.place_event_button(ui, event_rect, orig_event);
-    if let Some(state) = self.interact_event_region(ui, resp) {
-      InteractingEvent::set(ui, orig_event.clone(), state)
+    let resp = self.place_event_button(ui, event_rect, event);
+    match self.interact_event_region(ui, resp) {
+      None => (),
+      Some(FocusedEventState::EventCloning) => {
+        let new_event = self.clone_to_new_event(event);
+        InteractingEvent::set(ui, new_event, FocusedEventState::Dragging);
+      }
+      Some(state) => InteractingEvent::set(ui, event.clone(), state),
     }
 
     None
@@ -1082,6 +1098,13 @@ impl ScheduleUi {
 
     event.mark_changed();
     event
+  }
+
+  fn clone_to_new_event(&self, event: &Event) -> Event {
+    let mut new_event = event.clone();
+    new_event.id = new_event_id();
+    new_event.mark_changed();
+    new_event
   }
 
   fn pointer_to_datetime_auto(
