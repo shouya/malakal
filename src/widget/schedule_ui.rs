@@ -55,7 +55,7 @@ pub struct ScheduleUi {
   #[builder(default = "std::time::Instant::now()", setter(skip))]
   last_update: std::time::Instant,
 
-  #[builder(default = "15.0")]
+  #[builder(default = "5.0")]
   resizer_height: f32,
   #[builder(default = "20.0")]
   resizer_width_margin: f32,
@@ -247,16 +247,16 @@ impl ScheduleUi {
 
     let _lmb = egui::PointerButton::Primary;
 
+    let interact_pos =
+      resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
+
     if resp.clicked_by(egui::PointerButton::Primary) {
       return Some(FocusedEventState::Editing);
     }
 
-    let interact_pos =
-      resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
-
     if upper.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventStart);
       }
       return None;
@@ -264,7 +264,7 @@ impl ScheduleUi {
 
     if lower.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         return Some(FocusedEventState::DraggingEventEnd);
       }
       return None;
@@ -273,7 +273,7 @@ impl ScheduleUi {
     if event_rect.contains(interact_pos) {
       ui.output().cursor_icon = CursorIcon::Grab;
 
-      if resp.dragged() && resp.dragged_by(egui::PointerButton::Primary) {
+      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
         let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
         ui.memory().data.insert_temp(egui::Id::null(), offset);
         return Some(FocusedEventState::Dragging);
@@ -1042,6 +1042,11 @@ impl ScheduleUi {
       return Some(());
     }
 
+    if response.clicked_by(egui::PointerButton::Primary) {
+      InteractingEvent::discard(ui);
+      return Some(());
+    }
+
     if response.drag_released() {
       let event_id = ui.memory().data.get_temp(id)?;
       let mut value = InteractingEvent::get_id(ui, &event_id)?;
@@ -1157,15 +1162,11 @@ fn day_progress(datetime: &DateTime<Local>) -> f32 {
 
 // HACK: allow editing to override existing drag state, because it
 // seems that dragging always takes precedence.
-//
-// At the same time, do not allow resizing to be overridden by editing.
 fn state_override(
   old_state: FocusedEventState,
   new_state: FocusedEventState,
 ) -> FocusedEventState {
-  if old_state == FocusedEventState::Dragging
-    && new_state == FocusedEventState::Editing
-  {
+  if new_state == FocusedEventState::Editing {
     return new_state;
   }
 
