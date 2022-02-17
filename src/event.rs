@@ -1,7 +1,7 @@
-use chrono::FixedOffset;
+use chrono::{FixedOffset, Offset};
 use derive_builder::Builder;
 
-use crate::util::{now, DateTime};
+use crate::util::{now, utc_now, DateTime};
 
 pub type EventId = String;
 
@@ -16,12 +16,13 @@ pub struct Event {
   pub end: DateTime,
 
   // RFC 5545 DTSTAMP field
-  #[builder(default = "now()")]
+  #[builder(default = "utc_now()")]
   pub timestamp: DateTime,
 
-  #[builder(default = "now()")]
+  #[builder(default = "utc_now()")]
   pub created_at: DateTime,
-  #[builder(default = "now()")]
+
+  #[builder(default = "utc_now()")]
   pub modified_at: DateTime,
 
   #[builder(default)]
@@ -39,12 +40,12 @@ pub struct Event {
 
 impl Event {
   pub(crate) fn mark_changed(&mut self) {
-    self.modified_at = now();
+    self.modified_at = now(&self.modified_at.offset().fix());
     self.changed = true;
   }
 
   pub(crate) fn mark_deleted(&mut self) {
-    self.modified_at = now();
+    self.modified_at = now(&self.modified_at.offset().fix());
     self.deleted = true;
   }
 

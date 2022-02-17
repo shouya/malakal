@@ -1,6 +1,6 @@
 mod layout;
 
-use chrono::{Duration, NaiveTime, Timelike};
+use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, text::LayoutJob, vec2, Color32, CursorIcon, Label, LayerId, Pos2,
@@ -42,7 +42,7 @@ pub struct ScheduleUi {
   time_marker_format: &'static str,
   #[builder(default = "\"%F %a\"")]
   day_header_format: &'static str,
-  #[builder(default = "today()")]
+
   first_day: Date,
 
   // a small margin on the right of day columns reserved for creating
@@ -51,7 +51,6 @@ pub struct ScheduleUi {
   new_event_margin: f32,
 
   // used to render current time indicator
-  #[builder(default = "Some(now())")]
   current_time: Option<DateTime>,
 
   // used to refresh every second
@@ -74,6 +73,8 @@ pub struct ScheduleUi {
 
   #[builder(default = "Color32::LIGHT_BLUE")]
   new_event_color: Color32,
+
+  timezone: FixedOffset,
 
   new_event_calendar: String,
 }
@@ -180,7 +181,7 @@ impl ScheduleUi {
         .iter()
         .filter(|&e| !e.deleted)
         .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
-        .filter(|&e| matches!(layout_type(e), EventLayoutType::Single(..)))
+        .filter(|&e| matches!(self.layout_type(e), EventLayoutType::Single(..)))
         .map(|e| {
           if e.end - e.start < self.min_event_duration {
             let end = e.start + self.min_event_duration;
@@ -204,7 +205,7 @@ impl ScheduleUi {
     event: &Event,
   ) -> Option<Rect> {
     let widget_rect = ui.max_rect();
-    match layout_type(event) {
+    match self.layout_type(event) {
       EventLayoutType::Single(date, y) => {
         let rel_x = layout.query(&event.id)?;
         let day = self.date_to_day(date)?;
@@ -712,7 +713,7 @@ impl ScheduleUi {
     let offset = rect.left_top().to_vec2();
 
     if let Some(now) = self.current_time.as_ref() {
-      let y = day_progress(now) * rect.height();
+      let y = self.day_progress(now) * rect.height();
       let x0 = 0.0;
       let x1 = rect.width();
 
@@ -1014,7 +1015,8 @@ impl ScheduleUi {
           state.scope_updated = true;
         }
         if ui.button("Today").clicked() {
-          state.first_day = today() - Duration::days(self.day_count as i64 / 2);
+          state.first_day =
+            today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
           state.scope_updated = true;
         }
         if ui.button(">").clicked() {
@@ -1091,12 +1093,23 @@ impl ScheduleUi {
       .description(None)
       .start(self.first_day.and_hms(0, 0, 0))
       .end(self.first_day.and_hms(0, 0, 0) + self.min_event_duration)
+      .timestamp(now(&self.timezone))
+      .created_at(now(&self.timezone))
+      .modified_at(now(&self.timezone))
       .color([color.r(), color.g(), color.b()])
       .build()
       .unwrap();
 
     event.mark_changed();
     event
+  }
+
+  fn normalize_time(&self, time: &DateTime) -> DateTime {
+    time.with_timezone(&self.timezone)
+  }
+
+  fn normalize_date(&self, date: &Date) -> Date {
+    date.with_timezone(&self.timezone)
   }
 
   fn clone_to_new_event(&self, event: &Event) -> Event {
@@ -1143,7 +1156,7 @@ impl ScheduleUi {
     // the event crossed the day boundary, we need to pick a direction
     // based on the initial drag position
     if !on_the_same_day(start, end) {
-      if day_progress(&init_time) < 0.5 {
+      if self.day_progress(&init_time) < 0.5 {
         start = init_time;
         end = init_time + self.min_event_duration;
       } else {
@@ -1166,6 +1179,8 @@ impl ScheduleUi {
     remove_empty_events(events);
 
     for event in events.iter_mut() {
+      event.set_timezone(&self.timezone);
+
       if event.end - event.start < self.min_event_duration {
         self.move_event_end(event, event.start + self.min_event_duration);
       }
@@ -1179,15 +1194,35 @@ impl ScheduleUi {
   fn date_time_to_pos(&self, time: &DateTime) -> Pos2 {
     let x = (time.date() - self.first_day).num_days() as f32 / self.day_width
       + self.time_marker_margin_width;
-    let y = day_progress(time) * self.content_height()
+    let y = self.day_progress(time) * self.content_height()
       + self.day_header_margin_height;
     pos2(x, y)
   }
-}
 
-fn day_progress(datetime: &DateTime) -> f32 {
-  let seconds_past_midnight = datetime.num_seconds_from_midnight();
-  (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
+  fn day_progress(&self, datetime: &DateTime) -> f32 {
+    let datetime = self.normalize_time(datetime);
+    let seconds_past_midnight = datetime.num_seconds_from_midnight();
+    (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
+  }
+
+  fn layout_type(&self, event: &Event) -> EventLayoutType {
+    if event.start.date() == event.end.date() {
+      // single day event
+      let date = self.normalize_date(&event.start.date());
+      let a = self.day_progress(&event.start);
+      let b = self.day_progress(&event.end);
+      return EventLayoutType::Single(date, [a, b]);
+    }
+
+    if event.end == (event.start.date() + one_day()).and_hms(0, 0, 0) {
+      let date = self.normalize_date(&event.start.date());
+      let a = self.day_progress(&event.start);
+      let b = 1.0;
+      return EventLayoutType::Single(date, [a, b]);
+    }
+
+    unimplemented!()
+  }
 }
 
 // HACK: allow editing to override existing drag state, because it
@@ -1256,23 +1291,4 @@ fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
     commited_event.mark_changed();
     events.push(commited_event);
   }
-}
-
-fn layout_type(event: &Event) -> EventLayoutType {
-  if event.start.date() == event.end.date() {
-    // single day event
-    let date = event.start.date();
-    let a = day_progress(&event.start);
-    let b = day_progress(&event.end);
-    return EventLayoutType::Single(date, [a, b]);
-  }
-
-  if event.end == (event.start.date() + one_day()).and_hms(0, 0, 0) {
-    let date = event.start.date();
-    let a = day_progress(&event.start);
-    let b = 1.0;
-    return EventLayoutType::Single(date, [a, b]);
-  }
-
-  unimplemented!()
 }

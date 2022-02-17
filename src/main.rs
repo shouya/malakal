@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
       .offset_from_utc_datetime(&Utc::now().naive_utc())
       .fix()
   } else {
-    util::now().offset().fix()
+    util::local_now().offset().fix()
   };
 
   let local_backend = backend::LocalDirBuilder::default()

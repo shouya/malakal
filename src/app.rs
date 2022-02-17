@@ -28,15 +28,17 @@ impl epi::App for App {
     let mut scheduler = widget::ScheduleUiBuilder::default()
       .new_event_calendar(&self.calendar)
       .first_day(self.state.first_day)
+      .current_time(now(&self.timezone))
+      .timezone(self.timezone)
       .day_count(self.state.day_count)
       .build()
-      .unwrap();
+      .expect("failed to build scheduler");
 
     egui::CentralPanel::default().show(ctx, |ui| {
       let mut scroll_area = egui::ScrollArea::both();
 
       if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
-        let now = scheduler.scroll_position(&now());
+        let now = scheduler.scroll_position(&now(&self.timezone));
         scroll_area = scroll_area.vertical_scroll_offset(now);
       }
 
@@ -54,7 +56,7 @@ impl App {
     timezone: FixedOffset,
     backend: impl Backend + 'static,
   ) -> Self {
-    let first_day = today() - Duration::days(day_count as i64 / 2);
+    let first_day = today(&timezone) - Duration::days(day_count as i64 / 2);
 
     let state = ScheduleUiState {
       day_count,
@@ -94,10 +96,7 @@ impl App {
 
     let start = self.state.first_day.and_hms(0, 0, 0);
     let end = start + chrono::Duration::days(self.state.day_count as i64);
-    let mut events = self.backend.get_events(start, end).expect("load events");
-    events
-      .iter_mut()
-      .for_each(|ev| ev.set_timezone(&self.timezone));
+    let events = self.backend.get_events(start, end).expect("load events");
 
     self.state.events = events;
 
