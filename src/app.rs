@@ -24,23 +24,22 @@ impl epi::App for App {
     self.refresh_events();
     self.load_events();
 
+    let mut scheduler = widget::ScheduleUiBuilder::default()
+      .new_event_calendar(&self.calendar)
+      .first_day(self.state.first_day)
+      .day_count(self.state.day_count)
+      .build()
+      .unwrap();
+
     egui::CentralPanel::default().show(ctx, |ui| {
       let mut scroll_area = egui::ScrollArea::both();
 
       if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
-        let roughly_8am_y = 640.0;
-        scroll_area = scroll_area.vertical_scroll_offset(roughly_8am_y);
+        let now = scheduler.scroll_position(&Local::now());
+        scroll_area = scroll_area.vertical_scroll_offset(now);
       }
 
-      scroll_area.show(ui, |ui| {
-        let mut scheduler = widget::ScheduleUiBuilder::default()
-          .new_event_calendar(&self.calendar)
-          .first_day(self.state.first_day)
-          .day_count(self.state.day_count)
-          .build()
-          .unwrap();
-        scheduler.show(ui, &mut self.state)
-      })
+      scroll_area.show(ui, |ui| scheduler.show(ui, &mut self.state))
     });
 
     self.apply_event_changes().expect("Failed applying changes");

@@ -1177,6 +1177,18 @@ impl ScheduleUi {
       }
     }
   }
+
+  pub fn scroll_position(&self, time: &DateTime<Local>) -> f32 {
+    self.date_time_to_pos(time).y
+  }
+
+  fn date_time_to_pos(&self, time: &DateTime<Local>) -> Pos2 {
+    let x = (time.date() - self.first_day).num_days() as f32 / self.day_width
+      + self.time_marker_margin_width;
+    let y = day_progress(time) * self.content_height()
+      + self.day_header_margin_height;
+    pos2(x, y)
+  }
 }
 
 fn day_progress(datetime: &DateTime<Local>) -> f32 {
