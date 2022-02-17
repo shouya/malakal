@@ -768,8 +768,6 @@ impl ScheduleUi {
         widget_visuals.text_color().linear_multiply(alpha),
       );
     }
-
-    self.draw_current_time_indicator(ui, time_mark_region, alpha);
   }
 
   fn draw_day_marks(&self, ui: &mut Ui, rect: Rect) {
@@ -934,10 +932,13 @@ impl ScheduleUi {
 
     self.regularize_events(&mut state.events);
 
-    let mut ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
-    self.draw_ticks(&mut ui, rect);
+    let mut child_ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
+    let ui = &mut child_ui;
 
-    let interacting_event = InteractingEvent::get_event(&ui);
+    self.draw_ticks(ui, rect);
+    self.draw_current_time_indicator(ui, rect, 1.0);
+
+    let interacting_event = InteractingEvent::get_event(ui);
     let interacting_event_id = interacting_event.as_ref().map(|x| x.id.clone());
 
     let layout = self.layout_events(&state.events, &interacting_event);
@@ -949,25 +950,25 @@ impl ScheduleUi {
       }
 
       if interacting_event_id.as_ref() == Some(&event.id) {
-        self.put_interacting_event_block(&mut ui, &layout);
+        self.put_interacting_event_block(ui, &layout);
         interacting_event_shown = true;
       } else {
-        self.put_non_interacting_event_block(&mut ui, &layout, event);
+        self.put_non_interacting_event_block(ui, &layout, event);
       }
     }
 
     if interacting_event_id.is_some() && !interacting_event_shown {
-      self.put_interacting_event_block(&mut ui, &layout);
+      self.put_interacting_event_block(ui, &layout);
     }
 
-    self.draw_day_marks(&mut ui, rect);
-    self.draw_time_marks(&mut ui, rect);
+    self.draw_day_marks(ui, rect);
+    self.draw_time_marks(ui, rect);
 
     let response =
       ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
 
-    self.handle_new_event(&mut ui, &response);
-    self.handle_context_menu(&mut ui, state, &response);
+    self.handle_new_event(ui, &response);
+    self.handle_context_menu(ui, state, &response);
 
     if let Some(event) = InteractingEvent::get_commited_event(&ui) {
       commit_updated_event(&mut state.events, event);
