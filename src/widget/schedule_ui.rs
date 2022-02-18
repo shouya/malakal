@@ -15,14 +15,6 @@ use crate::{
   util::{now, today, Date, DateTime},
 };
 
-pub(crate) struct ScheduleUiState {
-  pub events: Vec<Event>,
-  pub scope_updated: bool,
-  pub refresh_requested: bool,
-  pub day_count: usize,
-  pub first_day: Date,
-}
-
 #[derive(Builder, Clone, Debug, PartialEq)]
 #[builder(try_setter, setter(into))]
 pub struct ScheduleUi {
@@ -77,6 +69,15 @@ pub struct ScheduleUi {
   timezone: FixedOffset,
 
   new_event_calendar: String,
+
+  #[builder(default = "false")]
+  pub scope_updated: bool,
+
+  #[builder(default = "false")]
+  pub refresh_requested: bool,
+
+  #[builder(default = "vec![]")]
+  events: Vec<Event>,
 }
 
 type EventId = String;
@@ -329,19 +330,19 @@ impl ScheduleUi {
     let commit = match state {
       FocusedEventState::DraggingEventStart => {
         self.handle_event_resizing(ui, upper, |time| {
-          self.move_event_start(event, time);
+          move_event_start(event, time, self.min_event_duration);
           event.start
         })
       }
       FocusedEventState::DraggingEventEnd => {
         self.handle_event_resizing(ui, lower, |time| {
-          self.move_event_end(event, time);
+          move_event_end(event, time, self.min_event_duration);
           event.end
         })
       }
       FocusedEventState::Dragging => {
         self.handle_event_dragging(ui, event_rect, |time| {
-          self.move_event(event, time);
+          move_event(event, time);
           (event.start, event.end)
         })
       }
@@ -575,50 +576,6 @@ impl ScheduleUi {
   // 1. event end must be later than event start
   // 2. event duration must be at least self.min_event_duration long
   // 3. event date can't be changed
-  fn move_event_start(&self, event: &mut Event, new_start: DateTime) {
-    if event.end < new_start + self.min_event_duration {
-      return;
-    }
-
-    if !on_the_same_day(new_start, event.end) {
-      return;
-    }
-
-    if event.start != new_start {
-      event.mark_changed();
-      event.start = new_start;
-    }
-  }
-
-  fn move_event_end(&self, event: &mut Event, new_end: DateTime) {
-    if new_end < event.start + self.min_event_duration {
-      return;
-    }
-
-    if !on_the_same_day(event.start, new_end) {
-      return;
-    }
-
-    if event.end != new_end {
-      event.mark_changed();
-      event.end = new_end;
-    }
-  }
-
-  fn move_event(&self, event: &mut Event, new_start: DateTime) {
-    let duration = event.end - event.start;
-    let new_end = new_start + duration;
-
-    if !on_the_same_day(new_start, new_end) {
-      return;
-    }
-
-    if event.start != new_start || event.end != new_end {
-      event.mark_changed();
-      event.start = new_start;
-      event.end = new_end;
-    }
-  }
 
   fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime> {
     let day = (rel_pos.x / self.day_width) as i64;
@@ -935,11 +892,11 @@ impl ScheduleUi {
     )
   }
 
-  pub(crate) fn show_ui(&self, ui: &mut Ui, state: &mut ScheduleUiState) {
+  pub(crate) fn show_ui(&mut self, ui: &mut Ui) {
     let rect = ui.max_rect();
     let interacting_event = InteractingEvent::get_event(ui);
     let combined_events: Vec<CombinedEvent> =
-      combine_events(&state.events, interacting_event);
+      combine_events(&self.events, interacting_event);
 
     // background: ticks and current time indicator
     self.draw_ticks(ui, rect);
@@ -974,10 +931,10 @@ impl ScheduleUi {
       ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
 
     self.handle_new_event(ui, &response);
-    self.handle_context_menu(state, &response);
+    self.handle_context_menu(&response);
   }
 
-  pub(crate) fn show(&mut self, ui: &mut Ui, state: &mut ScheduleUiState) {
+  pub(crate) fn show(&mut self, ui: &mut Ui) {
     let (_id, rect) = ui.allocate_space(self.desired_size(ui));
 
     if !ui.is_rect_visible(rect) {
@@ -985,45 +942,56 @@ impl ScheduleUi {
     }
 
     // regularize timezone & enforce minimal duration
-    self.regularize_events(&mut state.events);
+    self.regularize_events();
 
     // draw the event ui
     let mut child_ui = ui.child_ui(rect, egui::Layout::left_to_right());
-    self.show_ui(&mut child_ui, state);
+    self.show_ui(&mut child_ui);
 
     // commit any event changes
     if let Some(event) = InteractingEvent::take_commited_event(ui) {
-      commit_updated_event(&mut state.events, event);
+      commit_updated_event(&mut self.events, event);
     }
     // commit deleted event
     if let Some(event_id) = DeletedEvent::take(ui) {
-      remove_deleted_events(&mut state.events, event_id);
+      remove_deleted_events(&mut self.events, event_id);
     }
-    remove_empty_events(&mut state.events);
+    remove_empty_events(&mut self.events);
   }
 
-  fn handle_context_menu(
-    &self,
-    state: &mut ScheduleUiState,
-    response: &Response,
-  ) {
+  pub fn time_range(&self) -> (DateTime, DateTime) {
+    let start = self.first_day.and_hms(0, 0, 0);
+    let end = start + chrono::Duration::days(self.day_count as i64);
+
+    (start, end)
+  }
+
+  pub fn load_events(&mut self, events: Vec<Event>) {
+    self.events = events;
+  }
+
+  pub fn events_mut(&mut self) -> &mut Vec<Event> {
+    &mut self.events
+  }
+
+  fn handle_context_menu(&mut self, response: &Response) {
     response.clone().context_menu(|ui| {
       if ui.button("Refresh").clicked() {
-        state.refresh_requested = true;
-        state.scope_updated = true;
+        self.refresh_requested = true;
+        self.scope_updated = true;
         ui.label("Refreshing events...");
         ui.close_menu();
       }
 
       ui.separator();
       if ui.button("3-day view").clicked() {
-        state.day_count = 3;
-        state.scope_updated = true;
+        self.day_count = 3;
+        self.scope_updated = true;
         ui.close_menu();
       }
       if ui.button("Weekly view").clicked() {
-        state.day_count = 7;
-        state.scope_updated = true;
+        self.day_count = 7;
+        self.scope_updated = true;
         ui.close_menu();
       }
 
@@ -1031,27 +999,27 @@ impl ScheduleUi {
 
       ui.horizontal(|ui| {
         if ui.button("<<").clicked() {
-          state.first_day =
+          self.first_day =
             self.first_day - Duration::days(self.day_count as i64);
-          state.scope_updated = true;
+          self.scope_updated = true;
         }
         if ui.button("<").clicked() {
-          state.first_day = self.first_day - Duration::days(1);
-          state.scope_updated = true;
+          self.first_day = self.first_day - Duration::days(1);
+          self.scope_updated = true;
         }
         if ui.button("Today").clicked() {
-          state.first_day =
+          self.first_day =
             today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
-          state.scope_updated = true;
+          self.scope_updated = true;
         }
         if ui.button(">").clicked() {
-          state.first_day = self.first_day + Duration::days(1);
-          state.scope_updated = true;
+          self.first_day = self.first_day + Duration::days(1);
+          self.scope_updated = true;
         }
         if ui.button(">>").clicked() {
-          state.first_day =
+          self.first_day =
             self.first_day + Duration::days(self.day_count as i64);
-          state.scope_updated = true;
+          self.scope_updated = true;
         }
       });
 
@@ -1200,20 +1168,28 @@ impl ScheduleUi {
     }
   }
 
-  fn regularize_events(&self, events: &mut Vec<Event>) {
-    remove_empty_events(events);
+  fn regularize_events(&mut self) {
+    remove_empty_events(&mut self.events);
 
-    for event in events.iter_mut() {
+    for event in self.events.iter_mut() {
       event.set_timezone(&self.timezone);
 
       if event.end - event.start < self.min_event_duration {
-        self.move_event_end(event, event.start + self.min_event_duration);
+        move_event_end(
+          event,
+          event.end + self.min_event_duration,
+          self.min_event_duration,
+        );
       }
     }
   }
 
   pub fn scroll_position(&self, time: &DateTime) -> f32 {
     self.date_time_to_pos(time).y
+  }
+
+  pub fn scroll_position_for_now(&self) -> f32 {
+    self.scroll_position(&now(&self.timezone))
   }
 
   fn date_time_to_pos(&self, time: &DateTime) -> Pos2 {
@@ -1363,4 +1339,57 @@ fn combine_events(
   }
 
   out_events
+}
+
+fn move_event_end(
+  event: &mut Event,
+  new_end: DateTime,
+  min_event_duration: Duration,
+) {
+  if new_end < event.start + min_event_duration {
+    return;
+  }
+
+  if !on_the_same_day(event.start, new_end) {
+    return;
+  }
+
+  if event.end != new_end {
+    event.mark_changed();
+    event.end = new_end;
+  }
+}
+
+fn move_event_start(
+  event: &mut Event,
+  new_start: DateTime,
+  min_event_duration: Duration,
+) {
+  if event.end < new_start + min_event_duration {
+    return;
+  }
+
+  if !on_the_same_day(new_start, event.end) {
+    return;
+  }
+
+  if event.start != new_start {
+    event.mark_changed();
+    event.start = new_start;
+  }
+}
+
+fn move_event(event: &mut Event, new_start: DateTime) {
+  let duration = event.end - event.start;
+  let new_end = new_start + duration;
+
+  if !on_the_same_day(new_start, new_end) {
+    return;
+  }
+
+  if event.start != new_start || event.end != new_end {
+    event.mark_changed();
+    event.start = new_start;
+    event.end = new_end;
+  }
 }
