@@ -130,7 +130,7 @@ impl InteractingEvent {
     Self::discard(ui);
   }
 
-  fn get_commited_event(ui: &Ui) -> Option<Event> {
+  fn take_commited_event(ui: &Ui) -> Option<Event> {
     let event = ui.memory().data.get_temp(Self::id());
     ui.memory().data.remove::<Event>(Self::id());
     event
@@ -142,6 +142,32 @@ impl InteractingEvent {
 
   fn get_event(ui: &Ui) -> Option<Event> {
     Self::get(ui).map(|v| v.event)
+  }
+}
+
+#[derive(Clone, Debug)]
+struct DeletedEvent {
+  event_id: EventId,
+}
+
+impl DeletedEvent {
+  fn id() -> egui::Id {
+    egui::Id::new("deleted_event")
+  }
+
+  fn set(ui: &Ui, event_id: &EventId) {
+    ui.memory().data.insert_temp(
+      Self::id(),
+      Self {
+        event_id: event_id.clone(),
+      },
+    );
+  }
+
+  fn take(ui: &Ui) -> Option<EventId> {
+    let deleted_event = ui.memory().data.get_temp(Self::id());
+    ui.memory().data.remove::<Self>(Self::id());
+    deleted_event.map(|x: Self| x.event_id)
   }
 }
 
@@ -162,18 +188,8 @@ fn one_day() -> Duration {
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events(
-    &self,
-    events: &[Event],
-    interacting: &Option<Event>,
-  ) -> Layout {
+  fn layout_events<'a>(&self, events: &[&'a Event]) -> Layout {
     let mut layout = Layout::default();
-    let mut events = events.to_vec();
-
-    if let Some(ev) = interacting.clone().take() {
-      events.retain(|x| x.id != ev.id);
-      events.insert(0, ev);
-    }
 
     for day in 0..self.day_count {
       // layout for each day
@@ -392,7 +408,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     layout: &Layout,
-    event: &mut Event,
+    event: &Event,
   ) -> Option<Response> {
     let event_rect = self.event_rect(ui, layout, event)?;
 
@@ -454,7 +470,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    event: &mut Event,
+    event: &Event,
   ) -> Response {
     let (layout, clipped) = self.shorten_event_label(ui, rect, &event.title);
 
@@ -468,7 +484,7 @@ impl ScheduleUi {
 
     resp.clone().context_menu(|ui| {
       if ui.button("Delete").clicked() {
-        event.deleted = true;
+        DeletedEvent::set(ui, &event.id);
         ui.close_menu();
       }
     });
@@ -919,66 +935,75 @@ impl ScheduleUi {
     )
   }
 
-  pub(crate) fn show(
-    &mut self,
-    parent_ui: &mut Ui,
-    state: &mut ScheduleUiState,
-  ) {
-    let (_id, rect) = parent_ui.allocate_space(self.desired_size(parent_ui));
+  pub(crate) fn show_ui(&self, ui: &mut Ui, state: &mut ScheduleUiState) {
+    let rect = ui.max_rect();
+    let interacting_event = InteractingEvent::get_event(ui);
+    let combined_events: Vec<CombinedEvent> =
+      combine_events(&state.events, interacting_event);
 
-    if !parent_ui.is_rect_visible(rect) {
-      return;
-    }
-
-    self.regularize_events(&mut state.events);
-
-    let mut child_ui = parent_ui.child_ui(rect, egui::Layout::left_to_right());
-    let ui = &mut child_ui;
-
+    // background: ticks and current time indicator
     self.draw_ticks(ui, rect);
     self.draw_current_time_indicator(ui, rect, 1.0);
 
-    let interacting_event = InteractingEvent::get_event(ui);
-    let interacting_event_id = interacting_event.as_ref().map(|x| x.id.clone());
+    let layout = self.layout_events(
+      combined_events
+        .iter()
+        .map(|x| x.event())
+        .collect::<Vec<_>>()
+        .as_slice(),
+    );
 
-    let layout = self.layout_events(&state.events, &interacting_event);
-
-    let mut interacting_event_shown = false;
-    for event in state.events.iter_mut() {
-      if event.deleted {
-        continue;
-      }
-
-      if interacting_event_id.as_ref() == Some(&event.id) {
-        self.put_interacting_event_block(ui, &layout);
-        interacting_event_shown = true;
-      } else {
-        self.put_non_interacting_event_block(ui, &layout, event);
+    // main: event buttons
+    for combined_event in combined_events {
+      match combined_event {
+        CombinedEvent::ExistingEvent(event) => {
+          self.put_non_interacting_event_block(ui, &layout, &event);
+        }
+        CombinedEvent::InteractingEvent(_event) => {
+          self.put_interacting_event_block(ui, &layout);
+        }
       }
     }
 
-    if interacting_event_id.is_some() && !interacting_event_shown {
-      self.put_interacting_event_block(ui, &layout);
-    }
-
+    // floating: time and day headers
     self.draw_day_marks(ui, rect);
     self.draw_time_marks(ui, rect);
 
+    // interact with blank area for context menu and new event creation
     let response =
       ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
 
     self.handle_new_event(ui, &response);
-    self.handle_context_menu(ui, state, &response);
+    self.handle_context_menu(state, &response);
+  }
 
-    if let Some(event) = InteractingEvent::get_commited_event(ui) {
+  pub(crate) fn show(&mut self, ui: &mut Ui, state: &mut ScheduleUiState) {
+    let (_id, rect) = ui.allocate_space(self.desired_size(ui));
+
+    if !ui.is_rect_visible(rect) {
+      return;
+    }
+
+    // regularize timezone & enforce minimal duration
+    self.regularize_events(&mut state.events);
+
+    // draw the event ui
+    let mut child_ui = ui.child_ui(rect, egui::Layout::left_to_right());
+    self.show_ui(&mut child_ui, state);
+
+    // commit any event changes
+    if let Some(event) = InteractingEvent::take_commited_event(ui) {
       commit_updated_event(&mut state.events, event);
+    }
+    // commit deleted event
+    if let Some(event_id) = DeletedEvent::take(ui) {
+      remove_deleted_events(&mut state.events, event_id);
     }
     remove_empty_events(&mut state.events);
   }
 
   fn handle_context_menu(
     &self,
-    _ui: &mut Ui,
     state: &mut ScheduleUiState,
     response: &Response,
   ) {
@@ -1225,7 +1250,7 @@ impl ScheduleUi {
   }
 }
 
-// HACK: allow editing to override existing drag state, because it
+// Hack: allow editing to override existing drag state, because it
 // seems that dragging always takes precedence.
 fn state_override(
   old_state: FocusedEventState,
@@ -1268,6 +1293,10 @@ fn reorder_times(t1: &mut DateTime, t2: &mut DateTime) -> bool {
   true
 }
 
+fn remove_deleted_events(events: &mut Vec<Event>, deleted_event_id: EventId) {
+  events.retain(|x| x.id != deleted_event_id)
+}
+
 fn remove_empty_events(events: &mut Vec<Event>) {
   for event in events.iter_mut() {
     if event.title.is_empty() {
@@ -1291,4 +1320,47 @@ fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
     commited_event.mark_changed();
     events.push(commited_event);
   }
+}
+
+enum CombinedEvent {
+  ExistingEvent(Event),
+  InteractingEvent(Event),
+}
+
+impl CombinedEvent {
+  fn event(&self) -> &Event {
+    match self {
+      CombinedEvent::ExistingEvent(ev) => ev,
+      CombinedEvent::InteractingEvent(ev) => ev,
+    }
+  }
+
+  fn event_id(&self) -> &EventId {
+    &self.event().id
+  }
+}
+
+fn combine_events(
+  events: &[Event],
+  interacting_event: Option<Event>,
+) -> Vec<CombinedEvent> {
+  use CombinedEvent::*;
+
+  let mut out_events: Vec<_> =
+    events.iter().map(|x| ExistingEvent(x.clone())).collect();
+
+  match interacting_event {
+    None => (),
+    Some(interacting_event) => {
+      match out_events
+        .iter_mut()
+        .find(|ev| ev.event_id() == &interacting_event.id)
+      {
+        None => out_events.push(InteractingEvent(interacting_event)),
+        Some(e) => *e = InteractingEvent(interacting_event),
+      }
+    }
+  }
+
+  out_events
 }
