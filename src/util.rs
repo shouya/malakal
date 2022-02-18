@@ -1,5 +1,5 @@
 pub use anyhow::{anyhow, bail, ensure, Result};
-use chrono::{FixedOffset, Local, Offset, Utc};
+use chrono::{Duration, FixedOffset, Local, Offset, Utc};
 
 pub type DateTime = chrono::DateTime<FixedOffset>;
 pub type Date = chrono::Date<FixedOffset>;
@@ -30,4 +30,36 @@ pub(crate) fn local_now() -> DateTime {
 pub(crate) fn local_today() -> Date {
   let today = Local::today();
   today.with_timezone(today.offset())
+}
+
+// return if the times were been swapped
+pub fn reorder_times(t1: &mut DateTime, t2: &mut DateTime) -> bool {
+  if t1 < t2 {
+    return false;
+  }
+  std::mem::swap(t1, t2);
+  true
+}
+
+pub fn on_the_same_day(mut t1: DateTime, mut t2: DateTime) -> bool {
+  if t1.date() == t2.date() {
+    return true;
+  }
+
+  if t2 < t1 {
+    std::mem::swap(&mut t1, &mut t2);
+  }
+
+  if (t1.date() + one_day()).and_hms(0, 0, 0) == t2 {
+    // to midnight
+    return true;
+  }
+
+  false
+}
+
+// can't be a constant because chrono::Duration constructors are not
+// declared as const functions.
+pub fn one_day() -> Duration {
+  Duration::days(1)
 }
