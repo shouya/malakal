@@ -710,10 +710,10 @@ impl ScheduleUi {
   fn draw_current_time_indicator(&self, ui: &mut Ui, rect: Rect, alpha: f32) {
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
-    let offset = rect.left_top().to_vec2();
+    let offset = self.content_offset(rect);
 
     if let Some(now) = self.current_time.as_ref() {
-      let y = self.day_progress(now) * rect.height();
+      let y = self.day_progress(now) * self.content_height();
       let x0 = 0.0;
       let x1 = rect.width();
 
@@ -970,7 +970,7 @@ impl ScheduleUi {
     self.handle_new_event(ui, &response);
     self.handle_context_menu(ui, state, &response);
 
-    if let Some(event) = InteractingEvent::get_commited_event(&ui) {
+    if let Some(event) = InteractingEvent::get_commited_event(ui) {
       commit_updated_event(&mut state.events, event);
     }
     remove_empty_events(&mut state.events);
