@@ -40,8 +40,6 @@ impl InteractingEvent {
   }
 
   fn discard(ui: &Ui) {
-    debug_assert!(Self::get(ui).is_some());
-
     ui.memory().data.remove::<Self>(Self::id())
   }
 
@@ -115,48 +113,40 @@ impl ScheduleUi {
     let interact_pos =
       resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
 
-    if resp.clicked_by(egui::PointerButton::Primary) {
-      return Some(Editing);
-    }
-
-    if upper.contains(interact_pos) {
-      ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
-        return Some(DraggingEventStart);
+    match detect_interaction(&resp) {
+      None => {
+        if upper.contains(interact_pos) || lower.contains(interact_pos) {
+          ui.output().cursor_icon = CursorIcon::ResizeVertical;
+        } else if event_rect.contains(interact_pos) {
+          ui.output().cursor_icon = CursorIcon::Grab;
+        }
+        None
       }
-      return None;
-    }
-
-    if lower.contains(interact_pos) {
-      ui.output().cursor_icon = CursorIcon::ResizeVertical;
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
-        return Some(DraggingEventEnd);
-      }
-      return None;
-    }
-
-    if event_rect.contains(interact_pos) {
-      ui.output().cursor_icon = CursorIcon::Grab;
-
-      if resp.drag_started()
-        && resp.dragged_by(egui::PointerButton::Primary)
-        && ui.input().modifiers.ctrl
+      Some(Interaction::Clicked)
+        if resp.clicked_by(egui::PointerButton::Primary) =>
       {
-        let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
-        ui.memory().data.insert_temp(egui::Id::null(), offset);
-        return Some(EventCloning);
+        Some(Editing)
       }
+      Some(Interaction::DragStarted { origin })
+        if resp.dragged_by(egui::PointerButton::Primary) =>
+      {
+        if upper.contains(origin) {
+          return Some(DraggingEventStart);
+        }
+        if lower.contains(origin) {
+          return Some(DraggingEventEnd);
+        }
 
-      if resp.drag_started() && resp.dragged_by(egui::PointerButton::Primary) {
-        let offset = DraggingEventYOffset(event_rect.top() - interact_pos.y);
+        let offset = DraggingEventYOffset(event_rect.top() - origin.y);
         ui.memory().data.insert_temp(egui::Id::null(), offset);
-        return Some(Dragging);
+        if ui.input().modifiers.ctrl {
+          Some(EventCloning)
+        } else {
+          Some(Dragging)
+        }
       }
-
-      return None;
+      _ => None,
     }
-
-    None
   }
 
   fn interact_event(
@@ -287,19 +277,11 @@ impl ScheduleUi {
       _ => {
         let event_rect = self.event_rect(ui, layout, &ie.event)?;
 
-        let (resp, commit) =
+        let (_resp, commit) =
           self.interact_event(ui, event_rect, ie.state, &mut ie.event);
 
         match commit {
-          None => {
-            // two possibilities:
-            // 1. a brief click
-            // 2. really dragging something
-            if let Some(new_state) = self.interact_event_region(ui, resp) {
-              ie.state = state_override(ie.state, new_state);
-            }
-            ie.save(ui)
-          }
+          None => ie.save(ui),
           Some(true) => ie.commit(ui),
           Some(false) => InteractingEvent::discard(ui),
         }
@@ -422,42 +404,49 @@ impl ScheduleUi {
 
     let id = response.id;
 
-    if response.drag_started()
-      && response.dragged_by(egui::PointerButton::Primary)
-    {
-      let mut event = self.new_event();
-      let pointer_pos = self.relative_pointer_pos(ui)?;
-      let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
-      let new_state = self.assign_new_event_dates(ui, init_time, &mut event)?;
+    match detect_interaction(response) {
+      None => (),
+      Some(Interaction::Clicked)
+        if response.clicked_by(egui::PointerButton::Primary) =>
+      {
+        InteractingEvent::discard(ui);
+        return Some(());
+      }
+      Some(Interaction::DragStarted { .. })
+        if response.dragged_by(egui::PointerButton::Primary) =>
+      {
+        let mut event = self.new_event();
+        let pointer_pos = self.relative_pointer_pos(ui)?;
+        let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
+        let new_state =
+          self.assign_new_event_dates(ui, init_time, &mut event)?;
 
-      ui.memory().data.insert_temp(id, event.id.clone());
-      ui.memory().data.insert_temp(id, init_time);
+        ui.memory().data.insert_temp(id, event.id.clone());
+        ui.memory().data.insert_temp(id, init_time);
 
-      InteractingEvent::set(ui, event, new_state);
+        InteractingEvent::set(ui, event, new_state);
 
-      return Some(());
-    }
+        return Some(());
+      }
+      Some(Interaction::DragReleased) => {
+        let event_id = ui.memory().data.get_temp(id)?;
+        let mut value = InteractingEvent::get_id(ui, &event_id)?;
+        value.state = Editing;
+        value.save(ui);
+      }
+      Some(Interaction::Dragged)
+        if response.dragged_by(egui::PointerButton::Primary) =>
+      {
+        let event_id: String = ui.memory().data.get_temp(id)?;
+        let init_time = ui.memory().data.get_temp(id)?;
+        let mut value = InteractingEvent::get_id(ui, &event_id)?;
+        let new_state =
+          self.assign_new_event_dates(ui, init_time, &mut value.event)?;
+        value.state = new_state;
+        value.save(ui);
+      }
 
-    if response.clicked_by(egui::PointerButton::Primary) {
-      InteractingEvent::discard(ui);
-      return Some(());
-    }
-
-    if response.drag_released() {
-      let event_id = ui.memory().data.get_temp(id)?;
-      let mut value = InteractingEvent::get_id(ui, &event_id)?;
-      value.state = Editing;
-      value.save(ui);
-    }
-
-    if response.dragged() && response.dragged_by(egui::PointerButton::Primary) {
-      let event_id: String = ui.memory().data.get_temp(id)?;
-      let init_time = ui.memory().data.get_temp(id)?;
-      let mut value = InteractingEvent::get_id(ui, &event_id)?;
-      let new_state =
-        self.assign_new_event_dates(ui, init_time, &mut value.event)?;
-      value.state = new_state;
-      value.save(ui);
+      _ => (),
     }
 
     Some(())
@@ -514,19 +503,6 @@ impl ScheduleUi {
   }
 }
 
-// Hack: allow editing to override existing drag state, because it
-// seems that dragging always takes precedence.
-fn state_override(
-  old_state: FocusedEventState,
-  new_state: FocusedEventState,
-) -> FocusedEventState {
-  if new_state == FocusedEventState::Editing {
-    return new_state;
-  }
-
-  old_state
-}
-
 fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
   let mut updated = false;
 
@@ -550,4 +526,69 @@ fn remove_deleted_events(events: &mut Vec<Event>, deleted_event_id: EventId) {
       event.mark_deleted();
     }
   }
+}
+
+enum Interaction {
+  Clicked,
+  DragStarted { origin: egui::Pos2 },
+  DragReleased,
+  Dragged,
+}
+
+// https://docs.rs/egui/latest/src/egui/input_state.rs.html#11-15
+const MAX_CLICK_DIST: f32 = 6.0;
+const MAX_CLICK_DURATION: f64 = 0.6;
+
+fn detect_interaction(response: &Response) -> Option<Interaction> {
+  use Interaction::*;
+
+  // this state remembers if we have detected any click/drag_started
+  // already.
+  #[derive(Clone)]
+  struct DetectionFinishFlag(bool);
+
+  let mut memory = response.ctx.memory();
+  let detection_finish_flag: &mut bool = &mut memory
+    .data
+    .get_temp_mut_or(response.id, DetectionFinishFlag(false))
+    .0;
+
+  let pointer = &response.ctx.input().pointer;
+  if !pointer.any_down() {
+    *detection_finish_flag = false;
+  }
+
+  if !*detection_finish_flag && response.clicked() {
+    *detection_finish_flag = true;
+    return Some(Clicked);
+  }
+
+  if response.drag_released() {
+    return Some(DragReleased);
+  }
+
+  if !*detection_finish_flag && response.dragged() {
+    let origin = pointer.press_origin().unwrap();
+    if let Some(pos) = pointer.hover_pos() {
+      let dx = (pos - origin).length_sq();
+      if dx > MAX_CLICK_DIST * MAX_CLICK_DIST {
+        *detection_finish_flag = true;
+        return Some(DragStarted { origin });
+      }
+    }
+
+    let dt = response.ctx.input().time - pointer.press_start_time().unwrap();
+    if dt > MAX_CLICK_DURATION {
+      *detection_finish_flag = true;
+      return Some(DragStarted { origin });
+    }
+
+    return None;
+  }
+
+  if *detection_finish_flag && response.dragged() {
+    return Some(Dragged);
+  }
+
+  None
 }
