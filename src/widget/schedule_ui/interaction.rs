@@ -21,6 +21,86 @@ struct InteractingEvent {
   state: FocusedEventState,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum Change {
+  Added { new: Event },
+  Removed { old: Event },
+  Modified { old: Event, new: Event },
+}
+
+impl Change {
+  fn reverse(self) -> Self {
+    use Change::*;
+
+    match self {
+      Added { new } => Removed { old: new },
+      Removed { old } => Added { new: old },
+      Modified { old, new } => Modified { new: old, old: new },
+    }
+  }
+
+  fn new_removed(events: &[Event], event_id: &EventId) -> Option<Self> {
+    events
+      .iter()
+      .find(|&e| &e.id == event_id)
+      .cloned()
+      .map(|old| Change::Removed { old })
+  }
+
+  fn new_changed(events: &[Event], changed_event: Event) -> Self {
+    if let Some(existing) =
+      events.iter().find(|&e| e.id == changed_event.id).cloned()
+    {
+      Change::Modified {
+        old: existing,
+        new: changed_event,
+      }
+    } else {
+      Change::Added { new: changed_event }
+    }
+  }
+
+  fn apply(&self, events: &mut Vec<Event>) {
+    match self.clone() {
+      Change::Added { mut new } => {
+        new.mark_changed();
+        events.push(new)
+      }
+      Change::Removed { old } => {
+        if let Some(e) = events.iter_mut().find(|e| e.id == old.id) {
+          e.mark_deleted();
+        }
+      }
+      Change::Modified { old, mut new } => {
+        new.mark_changed();
+
+        if let Some(e) = events.iter_mut().find(|e| e.id == old.id) {
+          *e = new;
+        }
+      }
+    }
+  }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(super) struct History {
+  changes: Vec<Change>,
+}
+
+impl History {
+  pub(super) fn clear(&mut self) {
+    self.changes.clear()
+  }
+
+  fn save(&mut self, change: Change) {
+    self.changes.push(change);
+  }
+
+  fn pop(&mut self) -> Option<Change> {
+    self.changes.pop()
+  }
+}
+
 impl InteractingEvent {
   fn id() -> egui::Id {
     egui::Id::new("interacting_event")
@@ -242,7 +322,7 @@ impl ScheduleUi {
     ui: &mut Ui,
     layout: &Layout,
     event: &Event,
-  ) -> Option<Response> {
+  ) -> Option<()> {
     let event_rect = self.event_rect(ui, layout, event)?;
 
     let resp = self.place_event_button(ui, event_rect, event);
@@ -255,14 +335,14 @@ impl ScheduleUi {
       Some(state) => InteractingEvent::set(ui, event.clone(), state),
     }
 
-    None
+    Some(())
   }
 
   pub(super) fn put_interacting_event_block(
     &self,
     ui: &mut Ui,
     layout: &Layout,
-  ) -> Option<Response> {
+  ) -> Option<()> {
     use FocusedEventState::*;
 
     let mut ie = InteractingEvent::get(ui)?;
@@ -288,7 +368,7 @@ impl ScheduleUi {
       }
     }
 
-    None
+    Some(())
   }
 
   fn place_event_button(
@@ -494,36 +574,31 @@ impl ScheduleUi {
 
   pub(super) fn apply_interacting_events(&mut self, ui: &Ui) {
     if let Some(event) = InteractingEvent::take_commited_event(ui) {
-      commit_updated_event(&mut self.events, event);
+      let change = Change::new_changed(&self.events, event.clone());
+      change.apply(&mut self.events);
+      self.history.save(change);
     }
     // commit deleted event
     if let Some(event_id) = DeletedEvent::take(ui) {
-      remove_deleted_events(&mut self.events, event_id);
-    }
-  }
-}
-
-fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
-  let mut updated = false;
-
-  for event in events.iter_mut() {
-    if event.id == commited_event.id {
-      event.mark_changed();
-      *event = commited_event.clone();
-      updated = true;
+      if let Some(change) = Change::new_removed(&self.events, &event_id) {
+        change.apply(&mut self.events);
+        self.history.save(change);
+      }
     }
   }
 
-  if !updated {
-    commited_event.mark_changed();
-    events.push(commited_event);
-  }
-}
+  pub(super) fn handle_undo(&mut self, ui: &mut Ui) {
+    let ctrl = ui.input().modifiers.ctrl
+      && !ui.input().modifiers.alt
+      && !ui.input().modifiers.shift;
+    let z = ui.input().key_released(egui::Key::Z);
 
-fn remove_deleted_events(events: &mut Vec<Event>, deleted_event_id: EventId) {
-  for event in events.iter_mut() {
-    if event.id == deleted_event_id {
-      event.mark_deleted();
+    if !(ctrl && z) {
+      return;
+    }
+
+    if let Some(change) = self.history.pop() {
+      change.reverse().apply(&mut self.events)
     }
   }
 }

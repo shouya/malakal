@@ -8,7 +8,10 @@ use eframe::egui::{
 };
 use uuid::Uuid;
 
-use self::layout::{Layout, LayoutAlgorithm};
+use self::{
+  interaction::History,
+  layout::{Layout, LayoutAlgorithm},
+};
 
 use crate::{
   event::{Event, EventBuilder},
@@ -78,6 +81,9 @@ pub struct ScheduleUi {
 
   #[builder(default = "vec![]")]
   events: Vec<Event>,
+
+  #[builder(default, setter(skip))]
+  history: History,
 }
 
 type EventId = String;
@@ -534,6 +540,8 @@ impl ScheduleUi {
 
     self.handle_new_event(ui, &response);
     self.handle_context_menu(&response);
+
+    self.handle_undo(ui);
   }
 
   pub(crate) fn show(&mut self, ui: &mut Ui) {
@@ -563,6 +571,8 @@ impl ScheduleUi {
   }
 
   pub fn load_events(&mut self, events: Vec<Event>) {
+    // avoid new events interfering with history
+    self.history.clear();
     self.events = events;
   }
 
