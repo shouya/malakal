@@ -223,10 +223,15 @@ impl ScheduleUi {
   }
 
   fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
-    let mut upper_resizer = rect.shrink2(vec2(self.resizer_width_margin, 0.0));
+    let corner_area = if rect.width() > self.resizer_width_margin * 2.0 {
+      vec2(self.resizer_width_margin, 0.0)
+    } else {
+      vec2(rect.width() / 4.0, 0.0)
+    };
+    let mut upper_resizer = rect.shrink2(corner_area);
     upper_resizer.set_height(self.resizer_height);
 
-    let mut lower_resizer = rect.shrink2(vec2(self.resizer_width_margin, 0.0));
+    let mut lower_resizer = rect.shrink2(corner_area);
     lower_resizer.set_top(rect.bottom() - self.resizer_height);
 
     if upper_resizer.intersects(lower_resizer) {
@@ -732,6 +737,10 @@ impl ScheduleUi {
     }
 
     unimplemented!()
+  }
+
+  pub fn update_current_time(&mut self) {
+    self.current_time = Some(now(&self.timezone));
   }
 }
 

@@ -545,5 +545,9 @@ fn commit_updated_event(events: &mut Vec<Event>, mut commited_event: Event) {
 }
 
 fn remove_deleted_events(events: &mut Vec<Event>, deleted_event_id: EventId) {
-  events.retain(|x| x.id != deleted_event_id)
+  for event in events.iter_mut() {
+    if event.id == deleted_event_id {
+      event.mark_deleted();
+    }
+  }
 }

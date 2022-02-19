@@ -22,6 +22,8 @@ impl epi::App for App {
     self.refresh_events();
     self.load_events();
 
+    self.scheduler_ui.update_current_time();
+
     egui::CentralPanel::default().show(ctx, |ui| {
       let mut scroll_area = egui::ScrollArea::both();
 
