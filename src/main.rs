@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use chrono::{Offset, TimeZone, Utc};
 use serde_derive::Deserialize;
 
@@ -20,9 +20,11 @@ struct Config {
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
-fn main() -> anyhow::Result<()> {
-  env_logger::init();
+const DEFAULT_CONFIG: &str = "calendar_name = \"time-blocking\"
+calendar_location = \"~/.calendar/time-blocking\"
+";
 
+fn read_or_initialize_config() -> anyhow::Result<Config> {
   let xdg = xdg::BaseDirectories::new()?;
   let config_file = xdg
     .place_config_file(format!("{APP_NAME}/config.toml"))
@@ -30,7 +32,22 @@ fn main() -> anyhow::Result<()> {
 
   log::info!("Loading config from {}", config_file.display());
 
-  let mut config: Config = toml::from_slice(&std::fs::read(config_file)?)?;
+  let dir = config_file
+    .parent()
+    .ok_or_else(|| anyhow!("Invalid config_file location: {config_file:?}"))?;
+
+  if !dir.exists() {
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(&config_file, DEFAULT_CONFIG)?;
+  }
+
+  Ok(toml::from_slice(&std::fs::read(config_file)?)?)
+}
+
+fn main() -> anyhow::Result<()> {
+  env_logger::init();
+
+  let mut config: Config = read_or_initialize_config()?;
 
   config.calendar_location = config
     .calendar_location
@@ -51,6 +68,8 @@ fn main() -> anyhow::Result<()> {
     .calendar(&config.calendar_name)
     .dir(&config.calendar_location)
     .build()?;
+
+  let xdg = xdg::BaseDirectories::new()?;
   let backend = backend::IndexedLocalDir::new(
     local_backend,
     xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
