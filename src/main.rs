@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
 
   config.calendar_location = config
     .calendar_location
-    .replace("~", &std::env::var("HOME")?);
+    .replace('~', &std::env::var("HOME")?);
 
   log::info!("Config loaded {:?}", &config);
 

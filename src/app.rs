@@ -1,4 +1,5 @@
 use std::sync::atomic::AtomicBool;
+use std::thread;
 
 use chrono::{Duration, FixedOffset};
 use eframe::{egui, epi};
@@ -9,6 +10,7 @@ use crate::{backend::Backend, widget};
 pub struct App {
   scheduler_ui: widget::ScheduleUi,
   backend: Box<dyn Backend>,
+  refresh_timer: Option<thread::JoinHandle<()>>,
 }
 
 static SCROLL: AtomicBool = AtomicBool::new(true);
@@ -16,6 +18,19 @@ static SCROLL: AtomicBool = AtomicBool::new(true);
 impl epi::App for App {
   fn name(&self) -> &str {
     "Malakal"
+  }
+
+  fn setup(
+    &mut self,
+    ctx: &egui::CtxRef,
+    _frame: &epi::Frame,
+    _storage: Option<&dyn epi::Storage>,
+  ) {
+    let ctx = ctx.clone();
+    self.refresh_timer = Some(thread::spawn(move || loop {
+      thread::sleep(std::time::Duration::from_millis(1000));
+      ctx.request_repaint();
+    }));
   }
 
   fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
@@ -62,6 +77,7 @@ impl App {
     Self {
       scheduler_ui,
       backend: Box::new(backend),
+      refresh_timer: None,
     }
   }
 
