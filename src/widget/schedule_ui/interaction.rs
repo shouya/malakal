@@ -1,6 +1,8 @@
+use chrono::Timelike;
 use eframe::egui::{
   self, text::LayoutJob, CursorIcon, Label, LayerId, Rect, Response, Sense, Ui,
 };
+use humantime;
 
 use crate::{
   event::Event,
@@ -387,9 +389,37 @@ impl ScheduleUi {
       resp.clone().on_hover_text(event.title.clone());
     }
 
+    let format_time = |time: DateTime| {
+      if time.second() == 0 {
+        time.format("%H:%M")
+      } else {
+        time.format("%H:%M:%S")
+      }
+    };
+
     resp.clone().context_menu(|ui| {
+      if let Some(desc) = &event.description {
+        ui.label(desc.to_string());
+      }
+
+      ui.label(format!(
+        "{}--{} ({})",
+        format_time(event.start),
+        format_time(event.end),
+        (event.end - event.start)
+          .to_std()
+          .map(|d| humantime::format_duration(d).to_string())
+          .unwrap_or_else(|_| "negative duration".to_string())
+      ));
+
+      ui.separator();
+
       if ui.button("Delete").clicked() {
         DeletedEvent::set(ui, &event.id);
+        ui.close_menu();
+      }
+
+      if ui.button("Close menu").clicked() {
         ui.close_menu();
       }
     });

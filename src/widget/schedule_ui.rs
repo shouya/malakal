@@ -854,7 +854,7 @@ fn move_event(event: &mut Event, new_start: DateTime) {
   }
 }
 
-fn remove_empty_events(events: &mut Vec<Event>) {
+fn remove_empty_events(events: &mut [Event]) {
   for event in events.iter_mut() {
     if event.title.is_empty() {
       event.mark_deleted();
