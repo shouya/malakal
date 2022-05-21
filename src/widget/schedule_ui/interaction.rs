@@ -604,7 +604,7 @@ impl ScheduleUi {
 
   pub(super) fn apply_interacting_events(&mut self, ui: &Ui) {
     if let Some(event) = InteractingEvent::take_commited_event(ui) {
-      let change = Change::new_changed(&self.events, event.clone());
+      let change = Change::new_changed(&self.events, event);
       change.apply(&mut self.events);
       self.history.save(change);
     }
