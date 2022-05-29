@@ -22,14 +22,14 @@ impl epi::App for App {
 
   fn setup(
     &mut self,
-    ctx: &egui::CtxRef,
-    _frame: &epi::Frame,
+    _ctx: &egui::CtxRef,
+    frame: &epi::Frame,
     _storage: Option<&dyn epi::Storage>,
   ) {
-    let ctx = ctx.clone();
+    let frame = frame.clone();
     self.refresh_timer = Some(thread::spawn(move || loop {
       thread::sleep(std::time::Duration::from_millis(1000));
-      ctx.request_repaint();
+      frame.request_repaint();
     }));
   }
 
