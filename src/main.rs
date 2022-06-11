@@ -1,56 +1,22 @@
 use std::str::FromStr;
 
-use anyhow::{anyhow, Context};
 use chrono::{Offset, TimeZone, Utc};
-use serde_derive::Deserialize;
+
+use crate::config::{Config, APP_NAME};
 
 mod app;
 mod backend;
+mod config;
 mod event;
 mod ical;
 mod notifier;
 mod util;
 mod widget;
 
-#[derive(Deserialize, Debug)]
-struct Config {
-  calendar_name: String,
-  calendar_location: String,
-  timezone: Option<String>,
-  notifier_switch: Option<bool>,
-  notifier_blacklist_processes: Vec<String>,
-}
-
-const APP_NAME: &str = env!("CARGO_PKG_NAME");
-
-const DEFAULT_CONFIG: &str = "calendar_name = \"time-blocking\"
-calendar_location = \"~/.calendar/time-blocking\"
-";
-
-fn read_or_initialize_config() -> anyhow::Result<Config> {
-  let xdg = xdg::BaseDirectories::new()?;
-  let config_file = xdg
-    .place_config_file(format!("{APP_NAME}/config.toml"))
-    .with_context(|| "cannot find xdg config directory")?;
-
-  log::info!("Loading config from {}", config_file.display());
-
-  let dir = config_file
-    .parent()
-    .ok_or_else(|| anyhow!("Invalid config_file location: {config_file:?}"))?;
-
-  if !dir.exists() {
-    std::fs::create_dir_all(dir)?;
-    std::fs::write(&config_file, DEFAULT_CONFIG)?;
-  }
-
-  Ok(toml::from_slice(&std::fs::read(config_file)?)?)
-}
-
 fn main() -> anyhow::Result<()> {
   env_logger::init();
 
-  let mut config: Config = read_or_initialize_config()?;
+  let mut config = Config::read_or_initialize()?;
 
   config.calendar_location = config
     .calendar_location
@@ -58,8 +24,8 @@ fn main() -> anyhow::Result<()> {
 
   log::info!("Config loaded {:?}", &config);
 
-  let timezone = if let Some(tz) = config.timezone {
-    chrono_tz::Tz::from_str(&tz)
+  let timezone = if let Some(ref tz) = config.timezone {
+    chrono_tz::Tz::from_str(tz)
       .map_err(|x| anyhow::anyhow!("{}", x))?
       .offset_from_utc_datetime(&Utc::now().naive_utc())
       .fix()
@@ -78,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
   )?;
 
-  let mut app = app::App::new(config.calendar_name, 3, timezone, backend);
+  let mut app = app::App::new(&config, 3, timezone, backend)?;
 
   app.load_events();
 

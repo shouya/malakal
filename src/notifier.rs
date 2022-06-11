@@ -1,6 +1,3 @@
-#![allow(unused)]
-use std::sync::{Arc, Mutex};
-
 use chrono::Duration;
 use notify_rust::Notification;
 use sysinfo::{ProcessExt, System, SystemExt};
@@ -8,10 +5,13 @@ use timer::Timer;
 
 use crate::backend::Backend;
 use crate::event::Event;
-use crate::util::{self, Result, Shared};
+use crate::util::{self, shared, utc_now, Result, Shared};
 use crate::Config;
 
 pub struct Notifier {
+  // this guard is only used to bind the lifetime of the guard to a
+  // notifier, not to be read.
+  #[allow(dead_code)]
   reschedule_guard: timer::Guard,
   context: Shared<NotifierContext>,
 }
@@ -56,11 +56,22 @@ impl NotifierContext {
     let mut context = shared_context.lock().unwrap();
     let shared_backend = context.backend.clone();
     let mut backend = shared_backend.lock().unwrap();
-    context.guards.clear();
-    let now = util::local_now();
-    let until = now + context.reschedule_interval;
 
-    for event in backend.get_events(now, until).into_iter().flatten() {
+    let now = util::utc_now();
+    let until = now + context.reschedule_interval;
+    let events: Vec<_> = backend
+      .get_events(now, until)
+      .into_iter()
+      .flatten()
+      .collect();
+
+    context.guards.clear();
+
+    for event in events {
+      if event.timestamp < utc_now() {
+        continue;
+      }
+
       let shared_context = shared_context.clone();
       let guard =
         context.timer.schedule_with_date(event.timestamp, move || {
@@ -72,33 +83,33 @@ impl NotifierContext {
   }
 
   fn notify(context: Shared<Self>, event: Event) {
-    let mut context = context.lock().unwrap();
-    if (!context.switch) {
+    let context = context.lock().unwrap();
+    if !context.switch {
       return;
     }
 
-    if (blacklist_process_running(&context.blacklist_processes)) {
+    if blacklist_process_running(&context.blacklist_processes) {
       return;
     }
 
     Notification::new()
-      .summary(&format!("Time for {}", &event.title))
+      .summary(&event.title)
       .appname("malakal")
       .show()
       .unwrap();
-
-    dbg!(event);
   }
 }
 
 impl Notifier {
-  fn start(config: &Config, backend: &Shared<dyn Backend>) -> Result<Self> {
-    let context = Arc::new(Mutex::new(NotifierContext::new(config, backend)?));
+  pub fn start(config: &Config, backend: &Shared<dyn Backend>) -> Result<Self> {
+    let context = shared(NotifierContext::new(config, backend)?);
     let reschedule_guard = NotifierContext::start_rescheduler(context.clone());
-    Ok(Self {
+    let notifier = Self {
       reschedule_guard,
       context,
-    })
+    };
+    notifier.events_updated();
+    Ok(notifier)
   }
 
   pub fn events_updated(&self) {
@@ -110,7 +121,7 @@ fn blacklist_process_running(blacklist: &[String]) -> bool {
   let system = System::default();
   for process in system.processes().values() {
     let name = process.name();
-    if (blacklist.iter().any(|black| black == name)) {
+    if blacklist.iter().any(|black| black == name) {
       return true;
     }
   }

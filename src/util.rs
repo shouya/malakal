@@ -5,6 +5,10 @@ pub type DateTime = chrono::DateTime<FixedOffset>;
 pub type Date = chrono::Date<FixedOffset>;
 pub type Shared<T> = std::sync::Arc<std::sync::Mutex<T>>;
 
+pub fn shared<T>(t: T) -> Shared<T> {
+  std::sync::Arc::new(std::sync::Mutex::new(t))
+}
+
 pub(crate) fn now(tz: &FixedOffset) -> DateTime {
   local_now().with_timezone(tz)
 }

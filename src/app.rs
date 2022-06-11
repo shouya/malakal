@@ -1,12 +1,14 @@
-use std::sync::Mutex;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use chrono::{Duration, FixedOffset};
 use eframe::{egui, epi};
 
+use crate::config::Config;
+use crate::util::shared;
 use crate::{
   backend::Backend,
+  notifier::Notifier,
   util::{now, today, Result, Shared},
   widget,
 };
@@ -14,7 +16,7 @@ use crate::{
 pub struct App {
   scheduler_ui: widget::ScheduleUi,
   backend: Shared<dyn Backend>,
-  // notifier: Shared<Notifier>,
+  notifier: Shared<Notifier>,
   refresh_timer: Option<thread::JoinHandle<()>>,
 }
 
@@ -61,15 +63,17 @@ impl epi::App for App {
 
 impl App {
   pub fn new(
-    calendar: String,
+    config: &Config,
     day_count: usize,
     timezone: FixedOffset,
     backend: impl Backend + 'static,
-  ) -> Self {
+  ) -> Result<Self> {
     let first_day = today(&timezone) - Duration::days(day_count as i64 / 2);
+    let backend: Shared<dyn Backend> = shared(backend);
+    let notifier = shared(Notifier::start(config, &backend)?);
 
     let scheduler_ui = widget::ScheduleUiBuilder::default()
-      .new_event_calendar(calendar)
+      .new_event_calendar(config.calendar_name.clone())
       .first_day(first_day)
       .current_time(now(&timezone))
       .timezone(timezone)
@@ -79,11 +83,12 @@ impl App {
       .build()
       .expect("failed to build scheduler");
 
-    Self {
+    Ok(Self {
       scheduler_ui,
-      backend: Arc::new(Mutex::new(backend)),
+      backend,
+      notifier,
       refresh_timer: None,
-    }
+    })
   }
 
   pub fn refresh_events(&mut self) {
@@ -121,13 +126,16 @@ impl App {
   }
 
   fn apply_event_changes(&mut self) -> Result<()> {
-    let backend = &mut self.backend.lock().unwrap();
+    let mut anything_changed = false;
+    let mut backend = self.backend.lock().unwrap();
     let events = self.scheduler_ui.events_mut();
     for event in events.iter() {
       if event.deleted {
         backend.delete_event(&event.id)?;
+        anything_changed = true;
       } else if event.changed {
         backend.update_event(event)?;
+        anything_changed = true;
       }
     }
 
@@ -135,6 +143,12 @@ impl App {
 
     for event in events.iter_mut() {
       event.reset_dirty_flags();
+    }
+
+    drop(backend);
+
+    if anything_changed {
+      self.notifier.lock().unwrap().events_updated();
     }
 
     Ok(())
