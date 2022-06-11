@@ -64,19 +64,19 @@ impl NotifierContext {
       .into_iter()
       .flatten()
       .collect();
+    drop(backend);
 
     context.guards.clear();
-
     for event in events {
-      if event.timestamp < utc_now() {
+      if event.start < utc_now() {
         continue;
       }
 
+      let notify_at = event.start;
       let shared_context = shared_context.clone();
-      let guard =
-        context.timer.schedule_with_date(event.timestamp, move || {
-          Self::notify(shared_context.clone(), event.clone())
-        });
+      let guard = context.timer.schedule_with_date(notify_at, move || {
+        Self::notify(shared_context.clone(), event.clone())
+      });
 
       context.guards.push(guard);
     }
