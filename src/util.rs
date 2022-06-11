@@ -3,6 +3,7 @@ use chrono::{Duration, FixedOffset, Local, Offset, Utc};
 
 pub type DateTime = chrono::DateTime<FixedOffset>;
 pub type Date = chrono::Date<FixedOffset>;
+pub type Shared<T> = std::sync::Arc<std::sync::Mutex<T>>;
 
 pub(crate) fn now(tz: &FixedOffset) -> DateTime {
   local_now().with_timezone(tz)

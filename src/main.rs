@@ -8,6 +8,7 @@ mod app;
 mod backend;
 mod event;
 mod ical;
+mod notifier;
 mod util;
 mod widget;
 
@@ -16,6 +17,8 @@ struct Config {
   calendar_name: String,
   calendar_location: String,
   timezone: Option<String>,
+  notifier_switch: Option<bool>,
+  notifier_blacklist_processes: Vec<String>,
 }
 
 const APP_NAME: &str = env!("CARGO_PKG_NAME");

@@ -7,7 +7,7 @@ use crate::util::{DateTime, Result};
 pub use indexed_local_dir::IndexedLocalDir;
 pub use local_dir::{LocalDir, LocalDirBuilder};
 
-pub trait Backend {
+pub trait Backend: Send {
   fn get_event(&mut self, event_id: &EventId) -> Result<Event>;
 
   // get events which overlap with the from..to interval.

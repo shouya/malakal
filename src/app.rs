@@ -1,15 +1,21 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
+use std::sync::{atomic::AtomicBool, Arc};
 use std::thread;
 
 use chrono::{Duration, FixedOffset};
 use eframe::{egui, epi};
 
-use crate::util::{now, today, Result};
-use crate::{backend::Backend, widget};
+use crate::{
+  backend::Backend,
+  notifier::Notifier,
+  util::{now, today, Result, Shared},
+  widget,
+};
 
 pub struct App {
   scheduler_ui: widget::ScheduleUi,
-  backend: Box<dyn Backend>,
+  backend: Shared<dyn Backend>,
+  // notifier: Shared<Notifier>,
   refresh_timer: Option<thread::JoinHandle<()>>,
 }
 
@@ -76,7 +82,7 @@ impl App {
 
     Self {
       scheduler_ui,
-      backend: Box::new(backend),
+      backend: Arc::new(Mutex::new(backend)),
       refresh_timer: None,
     }
   }
@@ -88,6 +94,8 @@ impl App {
 
     self
       .backend
+      .lock()
+      .unwrap()
       .force_refresh()
       .expect("failed to reload event");
 
@@ -102,19 +110,25 @@ impl App {
     }
 
     let (start, end) = self.scheduler_ui.time_range();
-    let events = self.backend.get_events(start, end).expect("load events");
+    let events = self
+      .backend
+      .lock()
+      .unwrap()
+      .get_events(start, end)
+      .expect("load events");
 
     self.scheduler_ui.load_events(events);
     self.scheduler_ui.scope_updated = false;
   }
 
   fn apply_event_changes(&mut self) -> Result<()> {
+    let backend = &mut self.backend.lock().unwrap();
     let events = self.scheduler_ui.events_mut();
     for event in events.iter() {
       if event.deleted {
-        self.backend.delete_event(&event.id)?;
+        backend.delete_event(&event.id)?;
       } else if event.changed {
-        self.backend.update_event(event)?;
+        backend.update_event(event)?;
       }
     }
 
