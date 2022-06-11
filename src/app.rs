@@ -7,7 +7,6 @@ use eframe::{egui, epi};
 
 use crate::{
   backend::Backend,
-  notifier::Notifier,
   util::{now, today, Result, Shared},
   widget,
 };
