@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use toml::ser::to_string_pretty;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(default)]
 pub struct Config {
   pub calendar_name: String,
   pub calendar_location: String,
@@ -11,9 +13,18 @@ pub struct Config {
 }
 
 pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
-pub const DEFAULT_CONFIG: &str = "calendar_name = \"time-blocking\"
-calendar_location = \"~/.calendar/time-blocking\"
-";
+
+impl Default for Config {
+  fn default() -> Self {
+    Self {
+      calendar_name: "malakal".into(),
+      calendar_location: "~/.calendar/malakal".into(),
+      timezone: None,
+      notifier_switch: Some(true),
+      notifier_blacklist_processes: vec![],
+    }
+  }
+}
 
 impl Config {
   pub fn read_or_initialize() -> anyhow::Result<Config> {
@@ -30,7 +41,8 @@ impl Config {
 
     if !dir.exists() {
       std::fs::create_dir_all(dir)?;
-      std::fs::write(&config_file, DEFAULT_CONFIG)?;
+      let default_conf = to_string_pretty(&Config::default())?;
+      std::fs::write(&config_file, default_conf)?;
     }
 
     Ok(toml::from_slice(&std::fs::read(config_file)?)?)
