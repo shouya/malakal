@@ -191,7 +191,8 @@ impl ScheduleUi {
       return None;
     }
 
-    let seconds = (SECS_PER_DAY as f32 * vert_pos) as i64;
+    let seconds = SECS_PER_DAY as f32 * vert_pos;
+    let seconds = ((seconds / 60.0).round() * 60.0) as i64;
 
     let date = self.first_day + Duration::days(day);
     let time = date.and_hms(0, 0, 0) + Duration::seconds(seconds);
