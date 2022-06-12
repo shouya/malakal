@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Context};
+use chrono::Duration;
 use serde::{Deserialize, Serialize};
+use serde_with::{formats::Flexible, serde_as};
 use toml::ser::to_string_pretty;
 
+#[serde_as]
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(default)]
 pub struct Config {
@@ -10,6 +13,8 @@ pub struct Config {
   pub timezone: Option<String>,
   pub notifier_switch: Option<bool>,
   pub notifier_blacklist_processes: Vec<String>,
+  #[serde_as(as = "serde_with::DurationMilliSeconds<i64, Flexible>")]
+  pub notification_timeout: Duration,
 }
 
 pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -21,6 +26,7 @@ impl Default for Config {
       calendar_location: "~/.calendar/malakal".into(),
       timezone: None,
       notifier_switch: Some(true),
+      notification_timeout: Duration::seconds(2000),
       notifier_blacklist_processes: vec![],
     }
   }

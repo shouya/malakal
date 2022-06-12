@@ -1,4 +1,5 @@
 use chrono::Duration;
+use log::warn;
 use notify_rust::Notification;
 use sysinfo::{ProcessExt, System, SystemExt};
 use timer::Timer;
@@ -21,6 +22,7 @@ struct NotifierContext {
   guards: Vec<timer::Guard>,
   switch: bool,
   blacklist_processes: Vec<String>,
+  notification_timeout: Duration,
   reschedule_interval: Duration,
   backend: Shared<dyn Backend>,
 }
@@ -33,13 +35,14 @@ impl NotifierContext {
       switch: config.notifier_switch.unwrap_or(true),
       blacklist_processes: config.notifier_blacklist_processes.clone(),
       backend: backend.clone(),
+      notification_timeout: config.notification_timeout,
       reschedule_interval: Self::reschedule_interval(),
     })
   }
 
   // should be const but chrono::from_std is not declared as const
   fn reschedule_interval() -> Duration {
-    Duration::from_std(std::time::Duration::from_secs(3600 * 24)).unwrap()
+    Duration::seconds(3600 * 24)
   }
 
   fn start_rescheduler(shared_context: Shared<Self>) -> timer::Guard {
@@ -74,29 +77,39 @@ impl NotifierContext {
 
       let notify_at = event.start;
       let shared_context = shared_context.clone();
-      let guard = context.timer.schedule_with_date(notify_at, move || {
-        Self::notify(shared_context.clone(), event.clone())
-      });
+      let guard =
+        context.timer.schedule_with_date(
+          notify_at,
+          move || match Self::notify(shared_context.clone(), event.clone()) {
+            Ok(_) => (),
+            Err(e) => warn!("failed sending notification {e:?}"),
+          },
+        );
 
       context.guards.push(guard);
     }
   }
 
-  fn notify(context: Shared<Self>, event: Event) {
+  fn notify(context: Shared<Self>, event: Event) -> Result<()> {
     let context = context.lock().unwrap();
     if !context.switch {
-      return;
+      return Ok(());
     }
 
     if blacklist_process_running(&context.blacklist_processes) {
-      return;
+      return Ok(());
     }
 
     Notification::new()
       .summary(&event.title)
       .appname("malakal")
-      .show()
-      .unwrap();
+      .auto_icon()
+      .timeout(notify_rust::Timeout::Milliseconds(
+        context.notification_timeout.num_milliseconds().try_into()?,
+      ))
+      .show()?;
+
+    Ok(())
   }
 }
 
