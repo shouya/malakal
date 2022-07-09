@@ -1,5 +1,6 @@
 pub use anyhow::{anyhow, bail, ensure, Result};
-use chrono::{Duration, FixedOffset, Local, Offset, Utc};
+
+use chrono::{Datelike, Duration, FixedOffset, Local, Offset, TimeZone, Utc};
 
 pub type DateTime = chrono::DateTime<FixedOffset>;
 pub type Date = chrono::Date<FixedOffset>;
@@ -67,4 +68,28 @@ pub fn on_the_same_day(mut t1: DateTime, mut t2: DateTime) -> bool {
 // declared as const functions.
 pub fn one_day() -> Duration {
   Duration::days(1)
+}
+
+pub fn beginning_of_month(date: Date) -> Date {
+  let local_date_time = date.naive_local();
+  let bom_date = chrono::NaiveDate::from_ymd(
+    local_date_time.year(),
+    local_date_time.month(),
+    1,
+  );
+  date.timezone().from_local_date(&bom_date).unwrap()
+}
+
+pub fn end_of_month(date: Date) -> Date {
+  let local_date_time = date.naive_local();
+  let (year, month) = if local_date_time.month() == 12 {
+    (local_date_time.year() + 1, 1)
+  } else {
+    (local_date_time.year(), local_date_time.month() + 1)
+  };
+
+  let bom_next_month = chrono::NaiveDate::from_ymd(year, month, 1);
+  let local_bom = date.timezone().from_local_date(&bom_next_month).unwrap();
+
+  local_bom - Duration::days(1)
 }

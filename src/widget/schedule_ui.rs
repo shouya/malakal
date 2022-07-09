@@ -1,7 +1,7 @@
 mod interaction;
 mod layout;
 
-use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
+use chrono::{Duration, FixedOffset, NaiveTime, TimeZone, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, vec2, Color32, Pos2, Rect, Response, Sense, Ui, Vec2,
@@ -15,7 +15,8 @@ use self::{
 
 use crate::{
   event::{Event, EventBuilder},
-  util::{now, on_the_same_day, one_day, today, Date, DateTime},
+  util::{self, now, on_the_same_day, one_day, today, Date, DateTime},
+  widget::CalendarBuilder,
 };
 
 #[derive(Builder, Clone, Debug, PartialEq)]
@@ -571,6 +572,16 @@ impl ScheduleUi {
     (start, end)
   }
 
+  pub fn visible_dates(&self) -> Vec<Date> {
+    self
+      .first_day
+      .naive_local()
+      .iter_days()
+      .take(self.day_count)
+      .map(|date| self.first_day.timezone().from_local_date(&date).unwrap())
+      .collect()
+  }
+
   pub fn load_events(&mut self, events: Vec<Event>) {
     // avoid new events interfering with history
     self.history.clear();
@@ -632,10 +643,30 @@ impl ScheduleUi {
 
       ui.separator();
 
+      self.show_calendar(ui);
+
+      ui.separator();
+
       if ui.button("Close menu").clicked() {
         ui.close_menu();
       }
     });
+  }
+
+  fn show_calendar(&self, ui: &mut Ui) {
+    let bom = util::beginning_of_month(self.first_day);
+    let eom = util::end_of_month(self.first_day);
+
+    let mut cal = CalendarBuilder::default()
+      .first_date(bom)
+      .last_date(eom)
+      .current_date(self.current_time.map(|x| x.date()))
+      .weekday_offset(1)
+      .highlight_dates(self.visible_dates())
+      .build()
+      .unwrap();
+
+    cal.show_ui(ui);
   }
 
   fn new_event(&self) -> Event {
