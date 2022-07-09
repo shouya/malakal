@@ -32,7 +32,7 @@ impl NotifierContext {
     Ok(Self {
       timer: Timer::new(),
       guards: vec![],
-      switch: config.notifier_switch.unwrap_or(true),
+      switch: config.notifier_switch,
       blacklist_processes: config.notifier_blacklist_processes.clone(),
       backend: backend.clone(),
       notification_timeout: config.notification_timeout,

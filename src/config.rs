@@ -11,7 +11,7 @@ pub struct Config {
   pub calendar_name: String,
   pub calendar_location: String,
   pub timezone: Option<String>,
-  pub notifier_switch: Option<bool>,
+  pub notifier_switch: bool,
   pub notifier_blacklist_processes: Vec<String>,
   #[serde_as(as = "serde_with::DurationMilliSeconds<i64, Flexible>")]
   pub notification_timeout: Duration,
@@ -25,7 +25,7 @@ impl Default for Config {
       calendar_name: "malakal".into(),
       calendar_location: "~/.calendar/malakal".into(),
       timezone: None,
-      notifier_switch: Some(true),
+      notifier_switch: true,
       notification_timeout: Duration::seconds(2000),
       notifier_blacklist_processes: vec![],
     }
