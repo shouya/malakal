@@ -1,14 +1,13 @@
 use chrono::{Datelike, Duration};
 use derive_builder::Builder;
 
-use eframe::egui::{self, Color32, Rect, RichText, Ui};
+use eframe::egui::{self, Rect, RichText, Ui};
 
-use crate::util::Date;
+use crate::util::{beginning_of_month, end_of_month, Date};
 
 #[derive(Builder, Clone, Debug)]
 pub struct Calendar {
-  first_date: Date,
-  last_date: Date,
+  date: Date,
 
   // used to show today indicator
   current_date: Option<Date>,
@@ -24,6 +23,10 @@ pub struct Calendar {
   highlight_dates: Vec<Date>,
 }
 
+pub enum CalendarAction {
+  DateClicked(Date),
+}
+
 #[allow(unused)]
 impl Calendar {
   const DAYS_PER_WEEK: usize = 7;
@@ -34,7 +37,9 @@ impl Calendar {
     todo!()
   }
 
-  pub(crate) fn show_ui(&mut self, ui: &mut Ui) {
+  pub(crate) fn show_ui(&mut self, ui: &mut Ui) -> Option<CalendarAction> {
+    let mut action = None;
+
     egui::Grid::new("calendar")
       .num_columns(Self::DAYS_PER_WEEK)
       .min_col_width(self.day_square_size[0])
@@ -42,8 +47,10 @@ impl Calendar {
       .min_row_height(self.day_square_size[1])
       .show(ui, |ui| {
         self.draw_week_header(ui);
-        self.draw_days(ui);
+        action = self.draw_days(ui);
       });
+
+    action
   }
 
   fn draw_week_header(&self, ui: &mut Ui) {
@@ -60,32 +67,44 @@ impl Calendar {
     ui.end_row();
   }
 
-  fn draw_days(&self, ui: &mut Ui) {
-    let days_to_skip = self.calc_weekday_location(self.first_date);
-    for _ in 0..days_to_skip {
-      // skip by drawing an empty label
-      ui.label("");
-    }
+  fn draw_days(&self, ui: &mut Ui) -> Option<CalendarAction> {
+    let mut action = None;
 
-    let mut col = days_to_skip;
-    let mut d = self.first_date;
+    let bom = beginning_of_month(self.date);
+    let eom = end_of_month(self.date);
 
-    while d <= self.last_date {
-      self.draw_day(ui, d);
+    let days_form_previous_month = self.calc_weekday_location(bom);
+    let days_from_next_month =
+      dbg!(Self::DAYS_PER_WEEK) - dbg!(self.calc_weekday_location(eom));
 
-      col += 1;
-      if col == Self::DAYS_PER_WEEK {
-        col = 0;
+    let total_days = days_form_previous_month
+      + days_from_next_month
+      + (eom - bom).num_days() as usize;
+
+    let mut date = bom - Duration::days(days_form_previous_month as i64);
+
+    // draw days of the previous month
+    for i in 0..total_days {
+      let col = i % Self::DAYS_PER_WEEK;
+
+      action = action.or_else(|| self.draw_day(ui, date));
+      if col + 1 == Self::DAYS_PER_WEEK {
         ui.end_row();
       }
 
-      d = d + Duration::days(1);
+      date = date + Duration::days(1);
     }
+
+    action
   }
 
-  fn draw_day(&self, ui: &mut Ui, date: Date) {
+  fn draw_day(&self, ui: &mut Ui, date: Date) -> Option<CalendarAction> {
     let visuals = ui.visuals();
     let mut text = RichText::new(format!("{}", date.day()));
+
+    if !same_month(date, self.date) {
+      text = text.weak();
+    }
 
     if self.current_date == Some(date) {
       text = text.strong()
@@ -95,13 +114,20 @@ impl Calendar {
       text = text.underline();
     }
 
-    ui.vertical_centered(|ui| {
-      ui.button(text);
-    });
+    if ui.vertical_centered(|ui| ui.button(text)).inner.clicked() {
+      return Some(CalendarAction::DateClicked(date));
+    }
+
+    None
   }
 
   fn calc_weekday_location(&self, date: Date) -> usize {
     let weekday = date.weekday().num_days_from_sunday() as usize;
-    (weekday - self.weekday_offset) % Self::DAYS_PER_WEEK
+    // avoid overflow
+    (Self::DAYS_PER_WEEK + weekday - self.weekday_offset) % Self::DAYS_PER_WEEK
   }
+}
+
+fn same_month(d1: Date, d2: Date) -> bool {
+  d1.year() == d2.year() && d1.month() == d2.month()
 }

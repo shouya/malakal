@@ -15,7 +15,7 @@ use self::{
 
 use crate::{
   event::{Event, EventBuilder},
-  util::{self, now, on_the_same_day, one_day, today, Date, DateTime},
+  util::{now, on_the_same_day, one_day, today, Date, DateTime},
   widget::CalendarBuilder,
 };
 
@@ -653,20 +653,24 @@ impl ScheduleUi {
     });
   }
 
-  fn show_calendar(&self, ui: &mut Ui) {
-    let bom = util::beginning_of_month(self.first_day);
-    let eom = util::end_of_month(self.first_day);
+  fn show_calendar(&mut self, ui: &mut Ui) {
+    use super::CalendarAction::*;
 
     let mut cal = CalendarBuilder::default()
-      .first_date(bom)
-      .last_date(eom)
+      .date(self.first_day)
       .current_date(self.current_time.map(|x| x.date()))
       .weekday_offset(1)
       .highlight_dates(self.visible_dates())
       .build()
       .unwrap();
 
-    cal.show_ui(ui);
+    match cal.show_ui(ui) {
+      None => (),
+      Some(DateClicked(date)) => {
+        self.first_day = date - Duration::days(self.day_count as i64 / 2);
+        self.scope_updated = true;
+      }
+    }
   }
 
   fn new_event(&self) -> Event {
