@@ -5,8 +5,9 @@ use eframe::egui::{self, Rect, RichText, Ui};
 
 use crate::util::{beginning_of_month, end_of_month, Date};
 
-#[derive(Builder, Clone, Debug)]
+#[derive(Builder, Clone, Debug, PartialEq)]
 pub struct Calendar {
+  // we only use the year and month part of this date. The day is irrelevant.
   date: Date,
 
   // used to show today indicator
@@ -40,6 +41,8 @@ impl Calendar {
   pub(crate) fn show_ui(&mut self, ui: &mut Ui) -> Option<CalendarAction> {
     let mut action = None;
 
+    self.draw_month_header(ui);
+
     egui::Grid::new("calendar")
       .num_columns(Self::DAYS_PER_WEEK)
       .min_col_width(self.day_square_size[0])
@@ -51,6 +54,20 @@ impl Calendar {
       });
 
     action
+  }
+
+  fn draw_month_header(&mut self, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+      if ui.button("<<").clicked() {
+        self.date = month_offset(self.date, -1);
+      }
+
+      ui.label(format!("{}", self.date.format("%Y-%m")));
+
+      if ui.button(">>").clicked() {
+        self.date = month_offset(self.date, 1);
+      }
+    });
   }
 
   fn draw_week_header(&self, ui: &mut Ui) {
@@ -75,7 +92,7 @@ impl Calendar {
 
     let days_form_previous_month = self.calc_weekday_location(bom);
     let days_from_next_month =
-      dbg!(Self::DAYS_PER_WEEK) - dbg!(self.calc_weekday_location(eom));
+      Self::DAYS_PER_WEEK - self.calc_weekday_location(eom);
 
     let total_days = days_form_previous_month
       + days_from_next_month
@@ -130,4 +147,18 @@ impl Calendar {
 
 fn same_month(d1: Date, d2: Date) -> bool {
   d1.year() == d2.year() && d1.month() == d2.month()
+}
+
+fn month_offset(date: Date, num_months: i32) -> Date {
+  if num_months == 0 {
+    return date;
+  }
+
+  if num_months > 0 {
+    let date = end_of_month(date) + Duration::days(1);
+    month_offset(date, num_months - 1)
+  } else {
+    let date = beginning_of_month(date) - Duration::days(1);
+    month_offset(date, num_months + 1)
+  }
 }

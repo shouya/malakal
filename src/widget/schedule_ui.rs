@@ -19,6 +19,8 @@ use crate::{
   widget::CalendarBuilder,
 };
 
+use super::Calendar;
+
 #[derive(Builder, Clone, Debug, PartialEq)]
 #[builder(try_setter, setter(into))]
 pub struct ScheduleUi {
@@ -85,6 +87,9 @@ pub struct ScheduleUi {
 
   #[builder(default, setter(skip))]
   history: History,
+
+  #[builder(default)]
+  calendar: Option<Calendar>,
 }
 
 type EventId = String;
@@ -592,59 +597,68 @@ impl ScheduleUi {
     &mut self.events
   }
 
+  fn updated_scope(&mut self) {
+    self.scope_updated = true;
+
+    // reset calendar dates
+    self.calendar = None;
+  }
+
   fn handle_context_menu(&mut self, response: &Response) {
     response.clone().context_menu(|ui| {
       if ui.button("Refresh").clicked() {
         self.refresh_requested = true;
-        self.scope_updated = true;
+        self.updated_scope();
         ui.label("Refreshing events...");
         ui.close_menu();
       }
-
-      ui.separator();
-      if ui.button("3-day view").clicked() {
-        self.day_count = 3;
-        self.scope_updated = true;
-        ui.close_menu();
-      }
-      if ui.button("Weekly view").clicked() {
-        self.day_count = 7;
-        self.scope_updated = true;
-        ui.close_menu();
-      }
-
       ui.separator();
 
       ui.horizontal(|ui| {
         if ui.button("<<").clicked() {
           self.first_day =
             self.first_day - Duration::days(self.day_count as i64);
-          self.scope_updated = true;
+          self.updated_scope();
         }
         if ui.button("<").clicked() {
           self.first_day = self.first_day - Duration::days(1);
-          self.scope_updated = true;
+          self.updated_scope();
         }
         if ui.button("Today").clicked() {
           self.first_day =
             today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
-          self.scope_updated = true;
+          self.updated_scope();
         }
         if ui.button(">").clicked() {
           self.first_day = self.first_day + Duration::days(1);
-          self.scope_updated = true;
+          self.updated_scope();
         }
         if ui.button(">>").clicked() {
           self.first_day =
             self.first_day + Duration::days(self.day_count as i64);
-          self.scope_updated = true;
+          self.updated_scope();
         }
       });
-
       ui.separator();
 
-      self.show_calendar(ui);
+      ui.horizontal(|ui| {
+        if ui.button("3-day view").clicked() {
+          self.day_count = 3;
+          self.updated_scope();
+          ui.close_menu();
+        }
+        ui.label("/");
+        if ui.button("Weekly view").clicked() {
+          self.day_count = 7;
+          self.updated_scope();
+          ui.close_menu();
+        }
+      });
+      ui.separator();
 
+      ui.vertical_centered(|ui| {
+        self.show_calendar(ui);
+      });
       ui.separator();
 
       if ui.button("Close menu").clicked() {
@@ -656,19 +670,24 @@ impl ScheduleUi {
   fn show_calendar(&mut self, ui: &mut Ui) {
     use super::CalendarAction::*;
 
-    let mut cal = CalendarBuilder::default()
-      .date(self.first_day)
-      .current_date(self.current_time.map(|x| x.date()))
-      .weekday_offset(1)
-      .highlight_dates(self.visible_dates())
-      .build()
-      .unwrap();
+    let visible_dates = self.visible_dates();
+    let default_date = self.current_time.map(|x| x.date());
 
-    match cal.show_ui(ui) {
+    let calendar = self.calendar.get_or_insert_with(|| {
+      CalendarBuilder::default()
+        .date(self.first_day)
+        .current_date(default_date)
+        .weekday_offset(1)
+        .highlight_dates(visible_dates)
+        .build()
+        .unwrap()
+    });
+
+    match calendar.show_ui(ui) {
       None => (),
       Some(DateClicked(date)) => {
         self.first_day = date - Duration::days(self.day_count as i64 / 2);
-        self.scope_updated = true;
+        self.updated_scope();
       }
     }
   }
