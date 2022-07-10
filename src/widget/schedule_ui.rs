@@ -675,7 +675,7 @@ impl ScheduleUi {
 
     let calendar = self.calendar.get_or_insert_with(|| {
       CalendarBuilder::default()
-        .date(self.first_day)
+        .date(self.first_day + Duration::days(self.day_count as i64 / 2))
         .current_date(default_date)
         .weekday_offset(1)
         .highlight_dates(visible_dates)
