@@ -2,13 +2,15 @@
 
 Malakal is a day planner application. I crafted it because I was not able to find a comfortable calendar application for Linux. I myself have been using it daily for around half a year.
 
+#+html: <img src="asset/screenshot.png" width="600"/>
+
 * Features
 
 Core features:
 
-- event creation, modification
-- event notification
-- events storage as standard ical files
+- quickly add and modify events
+- notify on events
+- storage using standard ical files
 
 UI/UX features:
 
