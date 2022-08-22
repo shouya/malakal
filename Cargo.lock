@@ -1269,6 +1269,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "derive_builder",
+ "dirs",
  "eframe",
  "egui 0.18.1",
  "env_logger",
@@ -1288,7 +1289,6 @@ dependencies = [
  "timer",
  "toml",
  "uuid",
- "xdg",
 ]
 
 [[package]]
@@ -2798,15 +2798,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "463705a63313cd4301184381c5e8042f0a7e9b4bb63653f216311d4ae74690b7"
 dependencies = [
  "nom",
-]
-
-[[package]]
-name = "xdg"
-version = "2.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c4583db5cbd4c4c0303df2d15af80f0539db703fa1c68802d4cbbd2dd0f88f6"
-dependencies = [
- "dirs",
 ]
 
 [[package]]

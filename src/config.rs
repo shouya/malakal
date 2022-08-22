@@ -23,7 +23,7 @@ impl Default for Config {
   fn default() -> Self {
     Self {
       calendar_name: "malakal".into(),
-      calendar_location: "~/.calendar/malakal".into(),
+      calendar_location: format!("~/.calendar/{APP_NAME}"),
       timezone: None,
       notifier_switch: true,
       notification_timeout: Duration::seconds(2000),
@@ -34,10 +34,12 @@ impl Default for Config {
 
 impl Config {
   pub fn read_or_initialize() -> anyhow::Result<Config> {
-    let xdg = xdg::BaseDirectories::new()?;
-    let config_file = xdg
-      .place_config_file(format!("{APP_NAME}/config.toml"))
-      .with_context(|| "cannot find xdg config directory")?;
+    let config_file = {
+      let mut dir = dirs::config_dir()
+        .with_context(|| "Cannot find a directory to store config")?;
+      dir.push(format!("{APP_NAME}/config.toml"));
+      dir
+    };
 
     log::info!("Loading config from {}", config_file.display());
 

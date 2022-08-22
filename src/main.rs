@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use anyhow::Context;
 use chrono::{Offset, TimeZone, Utc};
 
 use crate::config::{Config, APP_NAME};
@@ -38,11 +39,13 @@ fn main() -> anyhow::Result<()> {
     .dir(&config.calendar_location)
     .build()?;
 
-  let xdg = xdg::BaseDirectories::new()?;
-  let backend = backend::IndexedLocalDir::new(
-    local_backend,
-    xdg.place_data_file(format!("{APP_NAME}/{APP_NAME}.db"))?,
-  )?;
+  let db_path = {
+    let mut path = dirs::data_dir()
+      .with_context(|| "Cannot find a directory to store data")?;
+    path.push(format!("{APP_NAME}/{APP_NAME}.db"));
+    path
+  };
+  let backend = backend::IndexedLocalDir::new(local_backend, db_path)?;
 
   let mut app = app::App::new(&config, 3, timezone, backend)?;
 
