@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Context};
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -33,6 +35,13 @@ impl Default for Config {
 }
 
 impl Config {
+  pub fn normalize(&mut self) -> anyhow::Result<()> {
+    self.calendar_location =
+      self.calendar_location.replace('~', &std::env::var("HOME")?);
+
+    Ok(())
+  }
+
   pub fn read_or_initialize() -> anyhow::Result<Config> {
     let config_file = {
       let mut dir = dirs::config_dir()
@@ -49,10 +58,23 @@ impl Config {
 
     if !dir.exists() {
       std::fs::create_dir_all(dir)?;
+    }
+
+    if !config_file.exists() {
+      log::info!("Creating default config at {config_file:?}");
       let default_conf = to_string_pretty(&Config::default())?;
       std::fs::write(&config_file, default_conf)?;
     }
 
-    Ok(toml::from_slice(&std::fs::read(config_file)?)?)
+    let mut config: Config = toml::from_slice(&std::fs::read(config_file)?)?;
+    config.normalize()?;
+
+    let calendar_location = PathBuf::from(config.calendar_location.as_str());
+    if !calendar_location.exists() {
+      log::info!("Creating calendar directory at {calendar_location:?}");
+      std::fs::create_dir_all(&calendar_location)?;
+    }
+
+    Ok(config)
   }
 }

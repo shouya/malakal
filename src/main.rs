@@ -15,14 +15,13 @@ mod util;
 mod widget;
 
 fn main() -> anyhow::Result<()> {
-  env_logger::init();
+  // default to log info
+  env_logger::builder()
+    .filter_level(log::LevelFilter::Info)
+    .parse_default_env()
+    .init();
 
-  let mut config = Config::read_or_initialize()?;
-
-  config.calendar_location = config
-    .calendar_location
-    .replace('~', &std::env::var("HOME")?);
-
+  let config = Config::read_or_initialize()?;
   log::info!("Config loaded {:?}", &config);
 
   let timezone = if let Some(ref tz) = config.timezone {
