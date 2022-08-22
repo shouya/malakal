@@ -22,7 +22,7 @@ ical = { version = "0.7.0", features = ["ical"] }
 # for webdav support (work in progress)
 # kitchen-fridge = { git = "https://github.com/shouya/kitchen-fridge.git" }
 
-rusqlite = {version = "0.26.3", features = ["chrono"] }
+rusqlite = {version = "0.26.3", features = ["bundled", "chrono"] }
 anyhow = { version = "1.0.53", features = ["backtrace"] }
 log = "0.4.14"
 env_logger = "0.9.0"
