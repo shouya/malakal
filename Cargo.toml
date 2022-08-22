@@ -1,7 +1,15 @@
 [package]
 name = "malakal"
+description = "a day-planning calendar app based on egui"
 version = "0.1.0"
 edition = "2021"
+license-file = "LICENSE"
+readme = "README.org"
+repository = "https://github.com/shouya/malakal"
+homepage = "https://github.com/shouya/malakal"
+documentation = "https://docs.rs/malakal"
+keywords = ["egui", "calendar", "desktop"]
+categories = ["gui"]
 
 # optimize dependencies for debug builds
 [profile.dev.package."*"]
