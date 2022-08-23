@@ -433,17 +433,17 @@ impl ScheduleUi {
     rect: Rect,
     label: &str,
   ) -> (impl Into<egui::WidgetText>, bool) {
-    let text_style = egui::TextStyle::Button;
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
     let color = ui.visuals().text_color();
 
     let layout_job = |text| {
-      let mut j = LayoutJob::simple_singleline(text, text_style, color);
-      j.wrap_width = rect.shrink2(ui.spacing().button_padding).width();
+      let mut j = LayoutJob::simple_singleline(text, font_id.clone(), color);
+      j.wrap.max_width = rect.shrink2(ui.spacing().button_padding).width();
       j
     };
 
     let job = layout_job(label.into());
-    let line_height = job.font_height(ui.fonts());
+    let line_height = job.font_height(&ui.fonts());
     let mut galley = ui.fonts().layout_job(job);
 
     if galley.size().y <= line_height {
@@ -633,6 +633,7 @@ impl ScheduleUi {
   }
 }
 
+#[derive(Debug)]
 enum Interaction {
   Clicked,
   DragStarted { origin: egui::Pos2 },
@@ -652,13 +653,14 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
   #[derive(Clone)]
   struct DetectionFinishFlag(bool);
 
+  let pointer = response.ctx.input().pointer.clone();
+
   let mut memory = response.ctx.memory();
   let detection_finish_flag: &mut bool = &mut memory
     .data
     .get_temp_mut_or(response.id, DetectionFinishFlag(false))
     .0;
 
-  let pointer = &response.ctx.input().pointer;
   if !pointer.any_down() {
     *detection_finish_flag = false;
   }

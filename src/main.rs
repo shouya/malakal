@@ -51,5 +51,12 @@ fn main() -> anyhow::Result<()> {
   app.load_events();
 
   let options = eframe::NativeOptions::default();
-  eframe::run_native(Box::new(app), options);
+
+  eframe::run_native(
+    APP_NAME,
+    options,
+    Box::new(|ctx| Box::new(app.setup(ctx))),
+  );
+
+  Ok(())
 }

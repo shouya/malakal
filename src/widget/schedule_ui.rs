@@ -343,7 +343,7 @@ impl ScheduleUi {
 
     painter.rect_filled(
       time_mark_region.shrink(visuals.clip_rect_margin),
-      widget_visuals.corner_radius,
+      widget_visuals.rounding.ne,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
 
@@ -356,7 +356,7 @@ impl ScheduleUi {
         pos2(x, y),
         egui::Align2::CENTER_CENTER,
         text,
-        egui::TextStyle::Monospace,
+        egui::TextStyle::Monospace.resolve(ui.style()),
         widget_visuals.text_color().linear_multiply(alpha),
       );
     }
@@ -393,7 +393,7 @@ impl ScheduleUi {
 
     painter.rect_filled(
       day_mark_region.shrink(visuals.clip_rect_margin),
-      widget_visuals.corner_radius,
+      widget_visuals.rounding.ne,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
 
@@ -406,7 +406,7 @@ impl ScheduleUi {
         pos2(x, day_mark_region.center().y),
         egui::Align2::CENTER_CENTER,
         text,
-        egui::TextStyle::Monospace,
+        egui::TextStyle::Monospace.resolve(ui.style()),
         widget_visuals.text_color().linear_multiply(alpha),
       );
 
@@ -562,7 +562,8 @@ impl ScheduleUi {
     self.regularize_events();
 
     // draw the event ui
-    let mut child_ui = ui.child_ui(rect, egui::Layout::left_to_right());
+    let mut child_ui =
+      ui.child_ui(rect, egui::Layout::left_to_right(egui::Align::default()));
     self.show_ui(&mut child_ui);
 
     // commit any event changes

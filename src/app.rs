@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use chrono::{Duration, FixedOffset};
-use eframe::{egui, epi};
+use eframe::{egui, CreationContext};
 
 use crate::config::Config;
 use crate::util::shared;
@@ -22,25 +22,12 @@ pub struct App {
 
 static SCROLL: AtomicBool = AtomicBool::new(true);
 
-impl epi::App for App {
-  fn name(&self) -> &str {
-    "Malakal"
-  }
-
-  fn setup(
+impl eframe::App for App {
+  fn update(
     &mut self,
-    _ctx: &egui::CtxRef,
-    frame: &epi::Frame,
-    _storage: Option<&dyn epi::Storage>,
+    ctx: &eframe::egui::Context,
+    _frame: &mut eframe::Frame,
   ) {
-    let frame = frame.clone();
-    self.refresh_timer = Some(thread::spawn(move || loop {
-      thread::sleep(std::time::Duration::from_millis(1000));
-      frame.request_repaint();
-    }));
-  }
-
-  fn update(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame) {
     self.refresh_events();
     self.load_events();
 
@@ -62,6 +49,15 @@ impl epi::App for App {
 }
 
 impl App {
+  pub fn setup(mut self, ctx: &CreationContext) -> Self {
+    let ctx = ctx.egui_ctx.clone();
+    self.refresh_timer = Some(thread::spawn(move || loop {
+      thread::sleep(std::time::Duration::from_millis(1000));
+      ctx.request_repaint();
+    }));
+    self
+  }
+
   pub fn new(
     config: &Config,
     day_count: usize,
