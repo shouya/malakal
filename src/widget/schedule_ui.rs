@@ -617,12 +617,11 @@ impl ScheduleUi {
 
       ui.horizontal(|ui| {
         if ui.button("<<").clicked() {
-          self.first_day =
-            self.first_day - Duration::days(self.day_count as i64);
+          self.first_day -= Duration::days(self.day_count as i64);
           self.updated_scope();
         }
         if ui.button("<").clicked() {
-          self.first_day = self.first_day - Duration::days(1);
+          self.first_day -= Duration::days(1);
           self.updated_scope();
         }
         if ui.button("Today").clicked() {
@@ -631,12 +630,11 @@ impl ScheduleUi {
           self.updated_scope();
         }
         if ui.button(">").clicked() {
-          self.first_day = self.first_day + Duration::days(1);
+          self.first_day += Duration::days(1);
           self.updated_scope();
         }
         if ui.button(">>").clicked() {
-          self.first_day =
-            self.first_day + Duration::days(self.day_count as i64);
+          self.first_day += Duration::days(self.day_count as i64);
           self.updated_scope();
         }
       });

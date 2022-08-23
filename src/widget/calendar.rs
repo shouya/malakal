@@ -109,7 +109,7 @@ impl Calendar {
         ui.end_row();
       }
 
-      date = date + Duration::days(1);
+      date += Duration::days(1);
     }
 
     action
