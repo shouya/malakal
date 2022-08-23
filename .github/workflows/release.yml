@@ -35,3 +35,6 @@ jobs:
           ARCHIVE_TYPES: ${{ matrix.archive }}
           PRE_BUILD: .github/install-bdeps.sh
           TOOLCHAIN_VERSION: stable
+      # wait for two minutes for upload before claiming the workflow
+      # finished.
+      - run: sleep 120
