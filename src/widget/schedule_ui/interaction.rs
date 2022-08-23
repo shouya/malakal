@@ -655,18 +655,30 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
 
   let pointer = response.ctx.input().pointer.clone();
 
-  let mut memory = response.ctx.memory();
-  let detection_finish_flag: &mut bool = &mut memory
-    .data
-    .get_temp_mut_or(response.id, DetectionFinishFlag(false))
-    .0;
+  let set_flag = |value| {
+    response
+      .ctx
+      .memory()
+      .data
+      .get_temp_mut_or(response.id, DetectionFinishFlag(false))
+      .0 = value;
+  };
+
+  let get_flag = || {
+    response
+      .ctx
+      .memory()
+      .data
+      .get_temp_mut_or(response.id, DetectionFinishFlag(false))
+      .0
+  };
 
   if !pointer.any_down() {
-    *detection_finish_flag = false;
+    set_flag(false);
   }
 
-  if !*detection_finish_flag && response.clicked() {
-    *detection_finish_flag = true;
+  if !get_flag() && response.clicked() {
+    set_flag(true);
     return Some(Clicked);
   }
 
@@ -674,26 +686,26 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
     return Some(DragReleased);
   }
 
-  if !*detection_finish_flag && response.dragged() {
+  if !get_flag() && response.dragged() {
     let origin = pointer.press_origin().unwrap();
     if let Some(pos) = pointer.hover_pos() {
       let dx = (pos - origin).length_sq();
       if dx > MAX_CLICK_DIST * MAX_CLICK_DIST {
-        *detection_finish_flag = true;
+        set_flag(true);
         return Some(DragStarted { origin });
       }
     }
 
     let dt = response.ctx.input().time - pointer.press_start_time().unwrap();
     if dt > MAX_CLICK_DURATION {
-      *detection_finish_flag = true;
+      set_flag(true);
       return Some(DragStarted { origin });
     }
 
     return None;
   }
 
-  if *detection_finish_flag && response.dragged() {
+  if get_flag() && response.dragged() {
     return Some(Dragged);
   }
 
