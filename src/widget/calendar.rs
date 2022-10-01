@@ -44,7 +44,7 @@ impl Calendar {
     self.draw_month_header(ui);
 
     egui::Grid::new("calendar")
-      .num_columns(Self::DAYS_PER_WEEK)
+      .num_columns(Self::DAYS_PER_WEEK + 1)
       .min_col_width(self.day_square_size[0])
       .max_col_width(self.day_square_size[0])
       .min_row_height(self.day_square_size[1])
@@ -105,7 +105,7 @@ impl Calendar {
       let col = i % Self::DAYS_PER_WEEK;
 
       action = action.or_else(|| self.draw_day(ui, date));
-      if col + 1 == Self::DAYS_PER_WEEK {
+      if col == Self::DAYS_PER_WEEK - 1 {
         ui.end_row();
       }
 

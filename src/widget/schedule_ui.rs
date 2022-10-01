@@ -654,9 +654,7 @@ impl ScheduleUi {
       });
       ui.separator();
 
-      ui.vertical_centered(|ui| {
-        self.show_calendar(ui);
-      });
+      self.show_calendar(ui);
       ui.separator();
 
       if ui.button("Close menu").clicked() {
