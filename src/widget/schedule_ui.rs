@@ -614,7 +614,7 @@ impl ScheduleUi {
     &mut self.events
   }
 
-  fn updated_scope(&mut self) {
+  fn mark_scope_updated(&mut self) {
     self.scope_updated = true;
 
     // reset calendar dates
@@ -625,7 +625,7 @@ impl ScheduleUi {
     response.clone().context_menu(|ui| {
       if ui.button("Refresh").clicked() {
         self.refresh_requested = true;
-        self.updated_scope();
+        self.mark_scope_updated();
         ui.label("Refreshing events...");
         ui.close_menu();
       }
@@ -634,24 +634,24 @@ impl ScheduleUi {
       ui.horizontal(|ui| {
         if ui.button("<<").clicked() {
           self.first_day -= Duration::days(self.day_count as i64);
-          self.updated_scope();
+          self.mark_scope_updated();
         }
         if ui.button("<").clicked() {
           self.first_day -= Duration::days(1);
-          self.updated_scope();
+          self.mark_scope_updated();
         }
         if ui.button("Today").clicked() {
           self.first_day =
             today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
-          self.updated_scope();
+          self.mark_scope_updated();
         }
         if ui.button(">").clicked() {
           self.first_day += Duration::days(1);
-          self.updated_scope();
+          self.mark_scope_updated();
         }
         if ui.button(">>").clicked() {
           self.first_day += Duration::days(self.day_count as i64);
-          self.updated_scope();
+          self.mark_scope_updated();
         }
       });
       ui.separator();
@@ -687,7 +687,7 @@ impl ScheduleUi {
       None => (),
       Some(DateClicked(date)) => {
         self.first_day = date - Duration::days(self.day_count as i64 / 2);
-        self.updated_scope();
+        self.mark_scope_updated();
       }
     }
   }
@@ -834,7 +834,7 @@ impl ScheduleUi {
     }
 
     self.day_width = day_space_width / self.day_count as f32;
-    self.updated_scope()
+    self.mark_scope_updated()
   }
 }
 
