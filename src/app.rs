@@ -41,7 +41,10 @@ impl eframe::App for App {
         scroll_area = scroll_area.vertical_scroll_offset(now);
       }
 
-      scroll_area.show(ui, |ui| self.scheduler_ui.show(ui));
+      scroll_area.show(ui, |ui| {
+        self.scheduler_ui.refit_into_ui(ui);
+        self.scheduler_ui.show(ui)
+      });
     });
 
     self.apply_event_changes().expect("Failed applying changes");

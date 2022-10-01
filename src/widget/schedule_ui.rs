@@ -28,10 +28,16 @@ pub struct ScheduleUi {
   day_count: usize,
   #[builder(default = "260.0")]
   day_width: f32,
+  #[builder(default = "100.0")]
+  day_min_width: f32,
+  #[builder(default = "260.0")]
+  day_max_width: f32,
   #[builder(default = "24")]
   segment_count: usize,
   #[builder(default = "80.0")]
   segment_height: f32,
+  #[builder(default = "80.0")]
+  time_marker_margin_default_width: f32,
   #[builder(default = "80.0")]
   time_marker_margin_width: f32,
   #[builder(default = "60.0")]
@@ -362,6 +368,16 @@ impl ScheduleUi {
     }
   }
 
+  fn day_mark_region(&self) -> Rect {
+    Rect::from_min_size(
+      pos2(self.time_marker_margin_width, 0.0),
+      vec2(
+        self.day_width * self.day_count as f32,
+        self.day_header_margin_height,
+      ),
+    )
+  }
+
   fn draw_day_marks(&self, ui: &mut Ui, rect: Rect) {
     let visuals = ui.style().visuals.clone();
     let widget_visuals = ui.style().noninteractive();
@@ -371,13 +387,8 @@ impl ScheduleUi {
       .current_time
       .map(|t| (t.date() - self.first_day).num_days());
 
-    let mut day_mark_region = Rect::from_min_size(
-      rect.left_top() + vec2(self.time_marker_margin_width, 0.0),
-      vec2(
-        self.day_width * self.day_count as f32,
-        self.day_header_margin_height,
-      ),
-    );
+    let mut day_mark_region =
+      self.day_mark_region().translate(rect.left_top().to_vec2());
 
     let mut alpha = 1.0;
 
@@ -640,21 +651,6 @@ impl ScheduleUi {
       });
       ui.separator();
 
-      ui.horizontal(|ui| {
-        if ui.button("3-day view").clicked() {
-          self.day_count = 3;
-          self.updated_scope();
-          ui.close_menu();
-        }
-        ui.label("/");
-        if ui.button("Weekly view").clicked() {
-          self.day_count = 7;
-          self.updated_scope();
-          ui.close_menu();
-        }
-      });
-      ui.separator();
-
       ui.vertical_centered(|ui| {
         self.show_calendar(ui);
       });
@@ -805,6 +801,47 @@ impl ScheduleUi {
 
   pub fn update_current_time(&mut self) {
     self.current_time = Some(now(&self.timezone));
+  }
+
+  fn is_today_visible(&self) -> bool {
+    self
+      .current_time
+      .map(|t| (t.date() - self.first_day).num_days())
+      .map(|d| d >= 0 && d < self.day_count as i64)
+      .unwrap_or(false)
+  }
+
+  pub fn refit_into_ui(&mut self, ui: &Ui) {
+    let old_today_visible = self.is_today_visible();
+    let max_width = ui.max_rect().width();
+    let mut day_space_width = max_width
+      - self.time_marker_margin_default_width
+      - ui.visuals().clip_rect_margin;
+
+    let day_count_min = day_space_width / self.day_max_width;
+    let day_count_max = day_space_width / self.day_min_width;
+    self.day_count = ((day_count_max + day_count_min) / 2.0).round() as usize;
+
+    if self.day_count == 0 {
+      // sequeeze out some space for a day
+      const TIME_MARKER_RESERVE_PORTION: f32 = 0.2;
+
+      self.time_marker_margin_width =
+        self.time_marker_margin_default_width * TIME_MARKER_RESERVE_PORTION;
+      self.day_count = 1;
+      day_space_width += self.time_marker_margin_default_width
+        * (1.0 - TIME_MARKER_RESERVE_PORTION);
+    } else {
+      self.time_marker_margin_width = self.time_marker_margin_default_width;
+    }
+
+    self.day_width = day_space_width / self.day_count as f32;
+    if old_today_visible && !self.is_today_visible() {
+      if let Some(current_time) = self.current_time {
+        // make sure today is still visible after resizing
+        self.first_day = current_time.date()
+      }
+    }
   }
 }
 
