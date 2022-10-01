@@ -803,16 +803,7 @@ impl ScheduleUi {
     self.current_time = Some(now(&self.timezone));
   }
 
-  fn is_today_visible(&self) -> bool {
-    self
-      .current_time
-      .map(|t| (t.date() - self.first_day).num_days())
-      .map(|d| d >= 0 && d < self.day_count as i64)
-      .unwrap_or(false)
-  }
-
   pub fn refit_into_ui(&mut self, ui: &Ui) {
-    let old_today_visible = self.is_today_visible();
     let max_width = ui.max_rect().width();
     let mut day_space_width = max_width
       - self.time_marker_margin_default_width
@@ -836,12 +827,6 @@ impl ScheduleUi {
     }
 
     self.day_width = day_space_width / self.day_count as f32;
-    if old_today_visible && !self.is_today_visible() {
-      if let Some(current_time) = self.current_time {
-        // make sure today is still visible after resizing
-        self.first_day = current_time.date()
-      }
-    }
   }
 }
 
