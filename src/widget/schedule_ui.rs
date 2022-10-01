@@ -37,8 +37,6 @@ pub struct ScheduleUi {
   #[builder(default = "80.0")]
   segment_height: f32,
   #[builder(default = "80.0")]
-  time_marker_margin_default_width: f32,
-  #[builder(default = "80.0")]
   time_marker_margin_width: f32,
   #[builder(default = "60.0")]
   day_header_margin_height: f32,
@@ -809,31 +807,29 @@ impl ScheduleUi {
   }
 
   pub fn refit_into_ui(&mut self, ui: &Ui) {
-    self.time_marker_margin_width = self.time_marker_margin_default_width;
     let day_space_width = ui.max_rect().width()
       - self.time_marker_margin_width
       - ui.visuals().clip_rect_margin;
 
     let day_count_min = day_space_width / self.day_max_width;
     let day_count_max = day_space_width / self.day_min_width;
-    const TIME_MARKER_RESERVED_PORTION: f32 = 0.2;
     let optimal_day_count =
       ((day_count_max + day_count_min) / 2.0).round() as usize;
 
     match optimal_day_count {
       0 => {
         self.day_count = 1;
-        self.time_marker_margin_width *= TIME_MARKER_RESERVED_PORTION;
-        self.day_width = ui.max_rect().width()
-          - self.time_marker_margin_width
-          - ui.visuals().clip_rect_margin
       }
       n => {
         self.day_count = n;
       }
     }
 
-    self.day_width = day_space_width / self.day_count as f32;
+    self.day_width = match day_space_width / self.day_count as f32 {
+      width if width < self.day_min_width => self.day_min_width,
+      width => width,
+    };
+
     self.mark_scope_updated()
   }
 }
