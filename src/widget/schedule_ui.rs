@@ -319,6 +319,16 @@ impl ScheduleUi {
     }
   }
 
+  fn time_mark_region(&self) -> Rect {
+    Rect::from_min_size(
+      pos2(0.0, self.day_header_margin_height),
+      vec2(
+        self.time_marker_margin_width,
+        self.segment_height * self.segment_count as f32,
+      ),
+    )
+  }
+
   fn draw_time_marks(&self, ui: &mut Ui, rect: Rect) {
     let offset = self.content_offset(rect);
 
@@ -326,13 +336,8 @@ impl ScheduleUi {
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
 
-    let mut time_mark_region = Rect::from_min_size(
-      rect.left_top() + vec2(0.0, self.day_header_margin_height),
-      vec2(
-        self.time_marker_margin_width,
-        self.segment_height * self.segment_count as f32,
-      ),
-    );
+    let mut time_mark_region =
+      self.time_mark_region().translate(rect.left_top().to_vec2());
 
     let mut alpha = 1.0;
 
@@ -804,29 +809,32 @@ impl ScheduleUi {
   }
 
   pub fn refit_into_ui(&mut self, ui: &Ui) {
-    let max_width = ui.max_rect().width();
-    let mut day_space_width = max_width
-      - self.time_marker_margin_default_width
+    self.time_marker_margin_width = self.time_marker_margin_default_width;
+    let day_space_width = ui.max_rect().width()
+      - self.time_marker_margin_width
       - ui.visuals().clip_rect_margin;
 
     let day_count_min = day_space_width / self.day_max_width;
     let day_count_max = day_space_width / self.day_min_width;
-    self.day_count = ((day_count_max + day_count_min) / 2.0).round() as usize;
+    const TIME_MARKER_RESERVED_PORTION: f32 = 0.2;
+    let optimal_day_count =
+      ((day_count_max + day_count_min) / 2.0).round() as usize;
 
-    if self.day_count == 0 {
-      // sequeeze out some space for a day
-      const TIME_MARKER_RESERVE_PORTION: f32 = 0.2;
-
-      self.time_marker_margin_width =
-        self.time_marker_margin_default_width * TIME_MARKER_RESERVE_PORTION;
-      self.day_count = 1;
-      day_space_width += self.time_marker_margin_default_width
-        * (1.0 - TIME_MARKER_RESERVE_PORTION);
-    } else {
-      self.time_marker_margin_width = self.time_marker_margin_default_width;
+    match optimal_day_count {
+      0 => {
+        self.day_count = 1;
+        self.time_marker_margin_width *= TIME_MARKER_RESERVED_PORTION;
+        self.day_width = ui.max_rect().width()
+          - self.time_marker_margin_width
+          - ui.visuals().clip_rect_margin
+      }
+      n => {
+        self.day_count = n;
+      }
     }
 
     self.day_width = day_space_width / self.day_count as f32;
+    self.updated_scope()
   }
 }
 
