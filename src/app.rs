@@ -35,13 +35,6 @@ impl eframe::App for App {
     self.scheduler_ui.update_current_time();
 
     egui::CentralPanel::default().show(ctx, |ui| {
-      let just_resized = match self.last_rect {
-        None => true,
-        Some(rect) => rect != ui.max_rect(),
-      };
-
-      self.last_rect = Some(ui.max_rect());
-
       let mut scroll_area = egui::ScrollArea::both();
 
       if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
@@ -50,9 +43,15 @@ impl eframe::App for App {
       }
 
       scroll_area.show(ui, |ui| {
+        let just_resized = match self.last_rect {
+          None => true,
+          Some(rect) => rect != ui.max_rect(),
+        };
         if just_resized {
+          self.last_rect = Some(ui.max_rect());
           self.scheduler_ui.refit_into_ui(ui);
         }
+
         self.scheduler_ui.show(ui)
       });
     });
