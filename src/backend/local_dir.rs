@@ -1,5 +1,6 @@
 use anyhow::Context;
 use derive_builder::Builder;
+use filetime::FileTime;
 use std::{
   ffi::OsStr,
   fs::DirEntry,
@@ -91,6 +92,7 @@ impl Backend for LocalDir {
 
     log::debug!("Updating event {:?}", path);
     std::fs::write(path, ics_content)?;
+    touch_dir(&self.dir);
 
     Ok(())
   }
@@ -116,4 +118,14 @@ impl Backend for LocalDir {
 
 fn event_visible_in_range(e: &Event, start: DateTime, end: DateTime) -> bool {
   e.start.max(start) <= e.end.min(end)
+}
+
+fn touch_dir(path: &Path) {
+  let mtime = FileTime::now();
+
+  // Failing is acceptable.
+  match filetime::set_file_mtime(path, mtime) {
+    Ok(()) => (),
+    Err(e) => log::warn!("Failed updating directory mtime {path:?}: #{e:?}"),
+  }
 }

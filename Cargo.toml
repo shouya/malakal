@@ -43,3 +43,4 @@ timer = "0.2.0"
 sysinfo = "0.24.3"
 serde_with = { version = "1.14.0", features = ["chrono"] }
 dirs = "4.0.0"
+filetime = "0.2.17"
