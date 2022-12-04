@@ -2,3 +2,4 @@
 
 - Update calendar directory mtime on modification
   + This allows external tools (e.g. khal) to know it's time to refresh their cache
+- Fix resizer rect which may not be clickable/draggable when events are too narrow
