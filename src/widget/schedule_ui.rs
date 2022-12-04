@@ -240,7 +240,7 @@ impl ScheduleUi {
   }
 
   fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
-    let corner_area = if rect.width() > self.resizer_width_margin * 2.0 {
+    let corner_area = if rect.width() > self.resizer_width_margin * 4.0 {
       vec2(self.resizer_width_margin, 0.0)
     } else {
       vec2(rect.width() / 4.0, 0.0)
