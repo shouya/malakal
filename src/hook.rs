@@ -13,28 +13,32 @@ pub struct HookExecutor {
   timer: Arc<Timer>,
   guard: Shared<Option<Guard>>,
   command: Option<Vec<String>>,
+  delay: Duration,
 }
 
 impl HookExecutor {
   pub fn new(config: &Config) -> Self {
-    let post_update_hook = config.post_update_hook.clone();
     Self {
       timer: Arc::new(Timer::new()),
       guard: Arc::new(Mutex::new(None)),
-      command: post_update_hook,
+      command: config.post_update_hook.clone(),
+      delay: config.post_update_hook_delay,
     }
   }
 
   pub fn report_updated(&self) {
-    if let Some(cmd_and_args) = self.command.as_ref() {
-      let one_min = Duration::seconds(1);
-      let cmd_and_args = cmd_and_args.clone();
-      let mut guard = self.guard.lock().unwrap();
+    let cmd_and_args = match self.command.as_ref() {
+      None => return,
+      Some(cmd_and_args) => cmd_and_args.clone(),
+    };
 
-      // cancel previous timer
-      drop(guard.take());
+    let mut guard = self.guard.lock().unwrap();
 
-      let schedule_guard = self.timer.schedule_with_delay(one_min, move || {
+    // cancel previous timer
+    drop(guard.take());
+
+    let schedule_guard =
+      self.timer.schedule_with_delay(self.delay, move || {
         let mut iter = cmd_and_args.iter();
         Command::new(iter.next().expect("Empty command"))
           .args(iter)
@@ -44,7 +48,6 @@ impl HookExecutor {
           .expect("failed to wait");
       });
 
-      *guard = Some(schedule_guard)
-    }
+    *guard = Some(schedule_guard)
   }
 }
