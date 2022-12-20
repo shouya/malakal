@@ -1,4 +1,4 @@
-** Unreleased
+** 0.1.8
 
 - Update calendar directory mtime on modification
   + This allows external tools (e.g. khal) to know it's time to refresh their cache

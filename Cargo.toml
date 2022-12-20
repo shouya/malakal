@@ -1,7 +1,7 @@
 [package]
 name = "malakal"
 description = "a day-planning calendar app based on egui"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license-file = "LICENSE"
 readme = "README.org"
