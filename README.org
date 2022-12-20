@@ -1,6 +1,8 @@
 * Malakal
 
-Malakal is a day planner application. I crafted it because I was not able to find a comfortable calendar application for Linux. I myself have been using it daily for around half a year.
+Malakal is a day planner application. I crafted it because I was not able to find a comfortable calendar application for Linux.
+
+I consider it in a mostly usable state - I myself have been using it on a daily basis for around a year now. Bug reports, feature requests, and contributions are warmly welcomed.
 
 #+html: <img src="asset/screenshot.png" width="600"/>
 
@@ -8,19 +10,22 @@ Malakal is a day planner application. I crafted it because I was not able to fin
 
 Core features:
 
-- quickly add and modify events
-- notify on events
-- storage using standard ical files
+- quickly add/modify/relocate/clone/delete events
+- notify on event starts
+- stored as standard ical files
+- post-update command (for running e.g. vdirsyncher)
 
 UI/UX features:
 
-- snapping mode and precision mode
-- click to edit event
-- undo modifications
+- click to edit event title
+- snapping mode (hold down shift to precision mode)
+- ctrl-z to undo modifications
 - drag on blank to create events
 - drag on an event to change its begin/end time or move the event
 - ctrl-drag on an event to clone it
-- calendar view for quick jumping to dates
+- right-click on an event to open menu (for event detail & deletion)
+- right-click on blank area to open calendar view
+- quickly jumping to dates in calendar view
 - current date/time indicator
 
 Typical calendar features that are not supported by malakal:
