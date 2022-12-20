@@ -1,0 +1,23 @@
+# place this file under ~/.config/malakal/config.toml
+
+# the calendar's name for newly created events
+calendar_name = "time-blocking"
+
+# the directory where the ical files are stored
+calendar_location = "~/.calendar/time-blocking"
+
+# specify timezone for new events. or delete this config entry to use
+# system timezone
+timezone = "Asia/Shanghai"
+
+# show a 2-second notification on event starts
+notifier_switch = true
+notification_timeout = 2000
+
+# do not show notification when any of the following processes are
+# running
+notifier_blacklist_processes = ["zoom"]
+
+# run "vdirsyncer sync" 30 seconds after any modification
+post_update_hook_delay = 30
+post_update_hook = ["/usr/bin/vdirsyncer", "sync"]
