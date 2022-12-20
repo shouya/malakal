@@ -9,6 +9,7 @@ mod app;
 mod backend;
 mod config;
 mod event;
+mod hook;
 mod ical;
 mod notifier;
 mod util;

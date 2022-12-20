@@ -5,6 +5,7 @@ use chrono::{Duration, FixedOffset};
 use eframe::{egui, CreationContext};
 
 use crate::config::Config;
+use crate::hook::HookExecutor;
 use crate::util::shared;
 use crate::{
   backend::Backend,
@@ -18,6 +19,7 @@ pub struct App {
   backend: Shared<dyn Backend>,
   notifier: Shared<Notifier>,
   refresh_timer: Option<thread::JoinHandle<()>>,
+  hook: HookExecutor,
   last_rect: Option<egui::Rect>,
 }
 
@@ -91,10 +93,13 @@ impl App {
       .build()
       .expect("failed to build scheduler");
 
+    let hook = HookExecutor::new(config);
+
     Ok(Self {
       scheduler_ui,
       backend,
       notifier,
+      hook,
       last_rect: None,
       refresh_timer: None,
     })
@@ -158,6 +163,7 @@ impl App {
 
     if anything_changed {
       self.notifier.lock().unwrap().events_updated();
+      self.hook.report_updated();
     }
 
     Ok(())
