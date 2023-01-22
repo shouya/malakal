@@ -31,7 +31,7 @@ impl Default for Config {
       calendar_location: format!("~/.calendar/{APP_NAME}"),
       timezone: None,
       notifier_switch: true,
-      notification_timeout: Duration::seconds(2000),
+      notification_timeout: Duration::seconds(5),
       notifier_blacklist_processes: vec![],
       post_update_hook: None,
       post_update_hook_delay: Duration::seconds(30),
