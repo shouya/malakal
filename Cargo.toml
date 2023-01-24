@@ -38,7 +38,7 @@ regex = "1.5.4"
 toml = "0.5.8"
 serde = "1.0.136"
 humantime = "2.1.0"
-notify-rust = { version = "4.5.8", default-features = false, features = ["d"] }
+notify-rust = { version = "4.7.0" }
 timer = "0.2.0"
 sysinfo = "0.24.3"
 serde_with = { version = "1.14.0", features = ["chrono"] }

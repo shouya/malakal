@@ -104,9 +104,7 @@ impl NotifierContext {
       .summary(&event.title)
       .appname("malakal")
       .auto_icon()
-      .timeout(notify_rust::Timeout::Milliseconds(
-        context.notification_timeout.num_milliseconds().try_into()?,
-      ))
+      .timeout(context.notification_timeout.to_std()?)
       .show()?;
 
     Ok(())
