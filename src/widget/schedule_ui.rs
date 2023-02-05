@@ -1,7 +1,7 @@
 mod interaction;
 mod layout;
 
-use chrono::{Duration, FixedOffset, NaiveTime, TimeZone, Timelike};
+use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, vec2, Color32, Pos2, Rect, Response, Sense, Ui, Vec2,
@@ -122,7 +122,7 @@ impl ScheduleUi {
       let events: Vec<layout::Ev> = events
         .iter()
         .filter(|&e| !e.deleted)
-        .filter(|&e| self.date_to_day(e.start.date()) == Some(day))
+        .filter(|&e| self.date_to_day(e.start.date_naive()) == Some(day))
         .filter(|&e| matches!(self.layout_type(e), EventLayoutType::Single(..)))
         .map(|e| {
           if e.end - e.start < self.min_event_duration {
@@ -205,8 +205,10 @@ impl ScheduleUi {
     let seconds = ((seconds / 60.0).round() * 60.0) as i64;
 
     let date = self.first_day + Duration::days(day);
-    let time = date.and_hms(0, 0, 0) + Duration::seconds(seconds);
-    Some(time)
+    let time = date.and_hms_opt(0, 0, 0).expect("date overflow")
+      + Duration::seconds(seconds);
+
+    time.and_local_timezone(self.timezone).single()
   }
 
   fn pointer_pos_to_datetime_snapping(
@@ -235,8 +237,9 @@ impl ScheduleUi {
     }
 
     let date = self.first_day + Duration::days(day);
-    let time = date.and_hms(0, 0, 0) + Duration::seconds(snapped_seconds);
-    Some(time)
+    let time = date.and_hms_opt(0, 0, 0).expect("date overflow")
+      + Duration::seconds(snapped_seconds);
+    time.and_local_timezone(self.timezone).single()
   }
 
   fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
@@ -388,7 +391,7 @@ impl ScheduleUi {
 
     let today_index = self
       .current_time
-      .map(|t| (t.date() - self.first_day).num_days());
+      .map(|t| (t.date_naive() - self.first_day).num_days());
 
     let mut day_mark_region =
       self.day_mark_region().translate(rect.left_top().to_vec2());
@@ -494,13 +497,17 @@ impl ScheduleUi {
     }
     let day = self.first_day + Duration::days(day as i64);
     let seconds = SECS_PER_DAY as usize / self.segment_count * segment;
-    if seconds >= SECS_PER_DAY as usize {
-      (day + Duration::days(1))
-        .and_time(NaiveTime::from_num_seconds_from_midnight(0, 0))
+
+    let naive_time = if seconds >= SECS_PER_DAY as usize {
+      (day + Duration::days(1)).and_hms_opt(0, 0, 0)
     } else {
-      let offset = NaiveTime::from_num_seconds_from_midnight(seconds as u32, 0);
-      day.and_time(offset)
-    }
+      let offset =
+        NaiveTime::from_num_seconds_from_midnight_opt(seconds as u32, 0)
+          .expect("seconds overflow");
+      Some(day.and_time(offset))
+    };
+
+    naive_time.and_then(|t| t.and_local_timezone(self.timezone).single())
   }
 
   fn desired_size(&self, ui: &Ui) -> Vec2 {
@@ -586,20 +593,20 @@ impl ScheduleUi {
   }
 
   pub fn time_range(&self) -> (DateTime, DateTime) {
-    let start = self.first_day.and_hms(0, 0, 0);
+    let start = self
+      .first_day
+      .and_hms_opt(0, 0, 0)
+      .expect("date overflow")
+      .and_local_timezone(self.timezone)
+      .single()
+      .expect("date overflow");
     let end = start + chrono::Duration::days(self.day_count as i64);
 
     (start, end)
   }
 
   pub fn visible_dates(&self) -> Vec<Date> {
-    self
-      .first_day
-      .naive_local()
-      .iter_days()
-      .take(self.day_count)
-      .map(|date| self.first_day.timezone().from_local_date(&date).unwrap())
-      .collect()
+    self.first_day.iter_days().take(self.day_count).collect()
   }
 
   pub fn load_events(&mut self, events: Vec<Event>) {
@@ -667,7 +674,7 @@ impl ScheduleUi {
     use super::CalendarAction::*;
 
     let visible_dates = self.visible_dates();
-    let default_date = self.current_time.map(|x| x.date());
+    let default_date = self.current_time.map(|x| x.date_naive());
 
     let calendar = self.calendar.get_or_insert_with(|| {
       CalendarBuilder::default()
@@ -690,13 +697,20 @@ impl ScheduleUi {
 
   fn new_event(&self) -> Event {
     let color = egui::Rgba::from(self.new_event_color);
+    let start = self
+      .first_day
+      .and_time(Default::default())
+      .and_local_timezone(self.timezone)
+      .single()
+      .expect("timezone conversion error");
+    let end = start + self.min_event_duration;
     let mut event = EventBuilder::default()
       .id(new_event_id())
       .calendar(self.new_event_calendar.as_str())
       .title("")
       .description(None)
-      .start(self.first_day.and_hms(0, 0, 0))
-      .end(self.first_day.and_hms(0, 0, 0) + self.min_event_duration)
+      .start(start)
+      .end(end)
       .timestamp(now(&self.timezone))
       .created_at(now(&self.timezone))
       .modified_at(now(&self.timezone))
@@ -710,10 +724,6 @@ impl ScheduleUi {
 
   fn normalize_time(&self, time: &DateTime) -> DateTime {
     time.with_timezone(&self.timezone)
-  }
-
-  fn normalize_date(&self, date: &Date) -> Date {
-    date.with_timezone(&self.timezone)
   }
 
   fn clone_to_new_event(&self, event: &Event) -> Event {
@@ -768,7 +778,8 @@ impl ScheduleUi {
   }
 
   fn date_time_to_pos(&self, time: &DateTime) -> Pos2 {
-    let x = (time.date() - self.first_day).num_days() as f32 / self.day_width
+    let x = (time.date_naive() - self.first_day).num_days() as f32
+      / self.day_width
       + self.time_marker_margin_width;
     let y = self.day_progress(time) * self.content_height()
       + self.day_header_margin_height;
@@ -782,16 +793,19 @@ impl ScheduleUi {
   }
 
   fn layout_type(&self, event: &Event) -> EventLayoutType {
-    if event.start.date() == event.end.date() {
+    if event.start.date_naive() == event.end.date_naive() {
       // single day event
-      let date = self.normalize_date(&event.start.date());
+      let date = event.start.date_naive();
       let a = self.day_progress(&event.start);
       let b = self.day_progress(&event.end);
       return EventLayoutType::Single(date, [a, b]);
     }
 
-    if event.end == (event.start.date() + one_day()).and_hms(0, 0, 0) {
-      let date = self.normalize_date(&event.start.date());
+    let midnight = (event.start.date_naive() + one_day())
+      .and_hms_opt(0, 0, 0)
+      .expect("date overflow");
+    if event.end.naive_local() == midnight {
+      let date = event.start.date_naive();
       let a = self.day_progress(&event.start);
       let b = 1.0;
       return EventLayoutType::Single(date, [a, b]);

@@ -1,9 +1,9 @@
 pub use anyhow::{anyhow, bail, ensure, Result};
 
-use chrono::{Datelike, Duration, FixedOffset, Local, Offset, TimeZone, Utc};
+use chrono::{Datelike, Duration, FixedOffset, Local, Offset, Utc};
 
 pub type DateTime = chrono::DateTime<FixedOffset>;
-pub type Date = chrono::Date<FixedOffset>;
+pub type Date = chrono::NaiveDate;
 pub type Shared<T> = std::sync::Arc<std::sync::Mutex<T>>;
 
 pub fn shared<T>(t: T) -> Shared<T> {
@@ -15,7 +15,7 @@ pub(crate) fn now(tz: &FixedOffset) -> DateTime {
 }
 
 pub(crate) fn today(tz: &FixedOffset) -> Date {
-  local_today().with_timezone(tz)
+  now(tz).date_naive()
 }
 
 pub(crate) fn utc_now() -> DateTime {
@@ -33,11 +33,6 @@ pub(crate) fn local_now() -> DateTime {
   now.with_timezone(now.offset())
 }
 
-pub(crate) fn local_today() -> Date {
-  let today = Local::today();
-  today.with_timezone(today.offset())
-}
-
 // return if the times were been swapped
 pub fn reorder_times(t1: &mut DateTime, t2: &mut DateTime) -> bool {
   if t1 < t2 {
@@ -48,7 +43,7 @@ pub fn reorder_times(t1: &mut DateTime, t2: &mut DateTime) -> bool {
 }
 
 pub fn on_the_same_day(mut t1: DateTime, mut t2: DateTime) -> bool {
-  if t1.date() == t2.date() {
+  if t1.date_naive() == t2.date_naive() {
     return true;
   }
 
@@ -56,7 +51,10 @@ pub fn on_the_same_day(mut t1: DateTime, mut t2: DateTime) -> bool {
     std::mem::swap(&mut t1, &mut t2);
   }
 
-  if (t1.date() + one_day()).and_hms(0, 0, 0) == t2 {
+  let t1_midnight = (t1.date_naive() + one_day())
+    .and_hms_opt(0, 0, 0)
+    .expect("date overflow");
+  if t1_midnight == t2.naive_local() {
     // to midnight
     return true;
   }
@@ -71,25 +69,19 @@ pub fn one_day() -> Duration {
 }
 
 pub fn beginning_of_month(date: Date) -> Date {
-  let local_date_time = date.naive_local();
-  let bom_date = chrono::NaiveDate::from_ymd(
-    local_date_time.year(),
-    local_date_time.month(),
-    1,
-  );
-  date.timezone().from_local_date(&bom_date).unwrap()
+  let bom_date = chrono::NaiveDate::from_ymd_opt(date.year(), date.month(), 1);
+  bom_date.expect("date overflow")
 }
 
 pub fn end_of_month(date: Date) -> Date {
-  let local_date_time = date.naive_local();
-  let (year, month) = if local_date_time.month() == 12 {
-    (local_date_time.year() + 1, 1)
+  let (year, month) = if date.month() == 12 {
+    (date.year() + 1, 1)
   } else {
-    (local_date_time.year(), local_date_time.month() + 1)
+    (date.year(), date.month() + 1)
   };
 
-  let bom_next_month = chrono::NaiveDate::from_ymd(year, month, 1);
-  let local_bom = date.timezone().from_local_date(&bom_next_month).unwrap();
+  let bom_next_month =
+    chrono::NaiveDate::from_ymd_opt(year, month, 1).expect("date overflow");
 
-  local_bom - Duration::days(1)
+  bom_next_month - Duration::days(1)
 }
