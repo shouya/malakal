@@ -106,8 +106,6 @@ enum EventLayoutType {
   Single(Date, [f32; 2]),
   #[allow(unused)]
   AllDay([Date; 2]),
-  #[allow(unused)]
-  Multi([DateTime; 2]),
 }
 
 const SECS_PER_DAY: u64 = 24 * 3600;
@@ -807,8 +805,14 @@ impl ScheduleUi {
     if event.end.naive_local() == midnight {
       let date = event.start.date_naive();
       let a = self.day_progress(&event.start);
-      let b = 1.0;
-      return EventLayoutType::Single(date, [a, b]);
+      return EventLayoutType::Single(date, [a, 1.0]);
+    }
+
+    // event crossing day boundary - we will only show the part of first day.
+    if event.end.naive_local() > midnight {
+      let date = event.start.date_naive();
+      let a = self.day_progress(&event.start);
+      return EventLayoutType::Single(date, [a, 1.0]);
     }
 
     unimplemented!()
