@@ -1,7 +1,7 @@
 use chrono::Timelike;
 use eframe::egui::{
-  self, text::LayoutJob, CursorIcon, Label, LayerId, Modifiers, Rect, Response,
-  Sense, Ui,
+  self, text::LayoutJob, CursorIcon, Key, Label, LayerId, Modifiers, Rect,
+  Response, Sense, Ui,
 };
 use humantime;
 
@@ -182,10 +182,29 @@ enum FocusedEventState {
 }
 
 impl ScheduleUi {
+  fn interact_event_region_keyboard(
+    &self,
+    ui: &mut Ui,
+    resp: &Response,
+  ) -> Option<FocusedEventState> {
+    use FocusedEventState::*;
+
+    if !resp.has_focus() {
+      return None;
+    }
+
+    // pressing enter on a focused event - change to edit mode
+    if ui.input_mut().consume_key(Modifiers::NONE, Key::Enter) {
+      return Some(Editing);
+    }
+
+    None
+  }
+
   fn interact_event_region(
     &self,
     ui: &mut Ui,
-    resp: Response,
+    resp: &Response,
   ) -> Option<FocusedEventState> {
     use FocusedEventState::*;
     let event_rect = resp.rect;
@@ -196,7 +215,7 @@ impl ScheduleUi {
     let interact_pos =
       resp.interact_pointer_pos().or_else(|| resp.hover_pos())?;
 
-    match detect_interaction(&resp) {
+    match detect_interaction(resp) {
       None => {
         if upper.contains(interact_pos) || lower.contains(interact_pos) {
           ui.output().cursor_icon = CursorIcon::ResizeVertical;
@@ -329,7 +348,12 @@ impl ScheduleUi {
     let event_rect = self.event_rect(ui, layout, event)?;
 
     let resp = self.place_event_button(ui, event_rect, event);
-    match self.interact_event_region(ui, resp) {
+
+    let interaction = self
+      .interact_event_region_keyboard(ui, &resp)
+      .or_else(|| self.interact_event_region(ui, &resp));
+
+    match interaction {
       None => (),
       Some(FocusedEventState::EventCloning) => {
         let new_event = self.clone_to_new_event(event);
@@ -514,8 +538,13 @@ impl ScheduleUi {
     use FocusedEventState::Editing;
 
     let id = response.id;
+    let interaction = detect_interaction(response);
 
-    match detect_interaction(response) {
+    if interaction.is_some() {
+      response.request_focus();
+    }
+
+    match interaction {
       None => (),
       Some(Interaction::Clicked)
         if response.clicked_by(egui::PointerButton::Primary) =>

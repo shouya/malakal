@@ -112,7 +112,7 @@ const SECS_PER_DAY: u64 = 24 * 3600;
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
-  fn layout_events<'a>(&self, events: &[&'a Event]) -> Layout {
+  fn layout_events(&self, events: &[&Event]) -> Layout {
     let mut layout = Layout::default();
 
     for day in 0..self.day_count {
