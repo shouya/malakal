@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use bimap::BiMap;
-use chrono::Timelike;
+use chrono::{Duration, Timelike};
 use eframe::egui::{
   self, text::LayoutJob, CursorIcon, Key, Label, LayerId, Modifiers, Rect,
   Response, Sense, Ui,
@@ -17,6 +17,14 @@ use super::{
   layout::Layout, move_event, move_event_end, move_event_start, EventId,
   ScheduleUi,
 };
+
+#[derive(Clone, Copy, Debug)]
+enum Direction {
+  Left,
+  Right,
+  Up,
+  Down,
+}
 
 #[derive(Clone, Copy, Debug)]
 struct DraggingEventYOffset(f32);
@@ -93,10 +101,6 @@ impl EventFocusRegistry {
     F: Fn(&mut Self) -> A,
   {
     f(ui.memory().data.get_temp_mut_or_default(ui.id()))
-  }
-
-  fn reset(&mut self) {
-    self.events.clear();
   }
 
   fn register(&mut self, ui_id: egui::Id, event_id: &EventId) {
@@ -257,15 +261,6 @@ enum FocusedEventState {
 }
 
 impl ScheduleUi {
-  // pub(super) fn handle_focus_move(ui: &mut Ui) {
-  //   let current_focus = match ui.memory().focus() {
-  //     Some(f) => f,
-  //     None => return,
-  //   };
-
-  //   EventFocusRegistry::with_ui(ui, |r| r.reset())
-  // }
-
   fn interact_event_region_keyboard(
     &self,
     ui: &mut Ui,
@@ -482,6 +477,39 @@ impl ScheduleUi {
     }
 
     Some(())
+  }
+
+  pub(super) fn handle_keyboard_focus_event(&self, ui: &Ui, events: &[Event]) {
+    use Direction::*;
+
+    let pressed = |k| ui.input_mut().consume_key(Modifiers::NONE, k);
+    let focus = ui.memory().focus();
+    let ev_id = focus.and_then(|id| {
+      EventFocusRegistry::with(ui, |r| r.get_event_id(&id).cloned())
+    });
+
+    let dir = if pressed(Key::J) || pressed(Key::ArrowDown) {
+      Some(Down)
+    } else if pressed(Key::K) || pressed(Key::ArrowUp) {
+      Some(Up)
+    } else if pressed(Key::H) || pressed(Key::ArrowLeft) {
+      Some(Left)
+    } else if pressed(Key::L) || pressed(Key::ArrowRight) {
+      Some(Right)
+    } else {
+      None
+    };
+
+    let new_focus = match (ev_id, dir) {
+      (None, Some(_)) => events.first().map(|x| x.id.clone()),
+      (Some(ev_id), Some(dir)) => find_next_focus(&ev_id, dir, events),
+      (_, None) => None,
+    };
+
+    match new_focus {
+      None => (),
+      Some(new_ev_id) => RefocusingEvent::request_focus(ui, &new_ev_id),
+    }
   }
 
   fn place_event_button(
@@ -826,4 +854,61 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
   }
 
   None
+}
+
+fn find_next_focus(
+  event_id: &EventId,
+  dir: Direction,
+  events: &[Event],
+) -> Option<EventId> {
+  use Direction::*;
+
+  match dir {
+    Left => find_juxtaposed_event(event_id, -1, events),
+    Right => find_juxtaposed_event(event_id, 1, events),
+    Up => find_adjacent_event(event_id, -1, events),
+    Down => find_adjacent_event(event_id, 1, events),
+  }
+}
+
+fn find_juxtaposed_event(
+  event_id: &EventId,
+  offset: isize,
+  events: &[Event],
+) -> Option<EventId> {
+  let ev = match events.iter().find(|x| &x.id == event_id) {
+    Some(ev) => ev,
+    None => return None,
+  };
+
+  let t = ev.start + Duration::days(offset as i64);
+  let dist = |e: &&Event| (e.start - t).num_seconds().abs();
+  let candidate_ev = match events.iter().min_by_key(dist) {
+    Some(ev) => ev,
+    None => return None,
+  };
+
+  if candidate_ev.id != ev.id {
+    return Some(candidate_ev.id.clone());
+  }
+
+  None
+}
+
+fn find_adjacent_event(
+  event_id: &EventId,
+  offset: isize,
+  events: &[Event],
+) -> Option<EventId> {
+  let i = match events.iter().position(|x| x.id == *event_id) {
+    Some(i) => i,
+    None => return None,
+  };
+
+  let new_i = i as isize + offset;
+  if new_i < 0 || new_i >= events.len() as isize {
+    return None;
+  }
+
+  Some(events[new_i as usize].id.clone())
 }

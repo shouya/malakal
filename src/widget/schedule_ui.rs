@@ -567,6 +567,7 @@ impl ScheduleUi {
     self.handle_new_event(ui, &response);
     self.handle_context_menu(&response);
     self.refocus_edited_event(ui);
+    self.handle_keyboard_focus_event(ui, &self.events);
 
     self.handle_undo(ui);
   }
