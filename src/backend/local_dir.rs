@@ -53,7 +53,7 @@ impl LocalDir {
 
   pub(crate) fn event_path(&self, event_id: &EventId) -> PathBuf {
     let mut path = self.dir.clone();
-    path.push(format!("{}.ics", event_id));
+    path.push(format!("{event_id}.ics"));
     path
   }
 }

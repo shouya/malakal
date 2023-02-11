@@ -138,7 +138,7 @@ impl InteractingEvent {
   }
 
   fn get_id(ui: &Ui, id: &EventId) -> Option<Self> {
-    Self::get(ui).and_then(|value| (&value.event.id == id).then(|| value))
+    Self::get(ui).and_then(|value| (&value.event.id == id).then_some(value))
   }
 
   fn get_event(ui: &Ui) -> Option<Event> {

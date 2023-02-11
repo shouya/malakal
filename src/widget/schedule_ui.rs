@@ -228,7 +228,7 @@ impl ScheduleUi {
     let seconds = SECS_PER_DAY as f32 * vert_pos;
     let mut snapped_seconds =
       (seconds / self.snapping_duration.num_seconds() as f32).floor() as i64
-        * self.snapping_duration.num_seconds() as i64;
+        * self.snapping_duration.num_seconds();
 
     if snapped_seconds > SECS_PER_DAY as i64 {
       snapped_seconds = SECS_PER_DAY as i64;

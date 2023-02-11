@@ -59,7 +59,9 @@ impl ICal {
       let s = value(p.clone())?;
       let tzid = p.params.and_then(|params| {
         params.into_iter().find_map(|(n, v)| {
-          (n == "TZID").then(|| ()).and_then(|_| v.into_iter().next())
+          (n == "TZID")
+            .then_some(())
+            .and_then(|_| v.into_iter().next())
         })
       });
       from_timestamp(&s, tzid.as_deref())
