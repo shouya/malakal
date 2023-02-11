@@ -1,6 +1,7 @@
 use chrono::Timelike;
 use eframe::egui::{
-  self, text::LayoutJob, CursorIcon, Label, LayerId, Rect, Response, Sense, Ui,
+  self, text::LayoutJob, CursorIcon, Label, LayerId, Modifiers, Rect, Response,
+  Sense, Ui,
 };
 use humantime;
 
@@ -618,12 +619,9 @@ impl ScheduleUi {
   }
 
   pub(super) fn handle_undo(&mut self, ui: &mut Ui) {
-    let ctrl = ui.input().modifiers.ctrl
-      && !ui.input().modifiers.alt
-      && !ui.input().modifiers.shift;
-    let z = ui.input().key_released(egui::Key::Z);
+    let ctrl_z = ui.input_mut().consume_key(Modifiers::CTRL, egui::Key::Z);
 
-    if !(ctrl && z) {
+    if !ctrl_z {
       return;
     }
 
