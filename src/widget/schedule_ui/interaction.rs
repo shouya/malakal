@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use bimap::BiMap;
 use chrono::Timelike;
 use eframe::egui::{
   self, text::LayoutJob, CursorIcon, Key, Label, LayerId, Modifiers, Rect,
@@ -17,12 +20,6 @@ use super::{
 
 #[derive(Clone, Copy, Debug)]
 struct DraggingEventYOffset(f32);
-
-#[derive(Clone, Debug)]
-struct InteractingEvent {
-  event: Event,
-  state: FocusedEventState,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 enum Change {
@@ -85,6 +82,36 @@ impl Change {
   }
 }
 
+#[derive(Clone, Debug, Default)]
+struct EventFocusRegistry {
+  events: BiMap<egui::Id, EventId>,
+}
+
+impl EventFocusRegistry {
+  fn with<F, A>(ui: &Ui, f: F) -> A
+  where
+    F: Fn(&mut Self) -> A,
+  {
+    f(ui.memory().data.get_temp_mut_or_default(ui.id()))
+  }
+
+  fn reset(&mut self) {
+    self.events.clear();
+  }
+
+  fn register(&mut self, ui_id: egui::Id, event_id: &EventId) {
+    self.events.insert(ui_id, event_id.clone());
+  }
+
+  fn get_event_id(&self, ui_id: &egui::Id) -> Option<&EventId> {
+    self.events.get_by_left(ui_id)
+  }
+
+  fn get_ui_id(&self, event_id: &EventId) -> Option<&egui::Id> {
+    self.events.get_by_right(event_id)
+  }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct History {
   changes: Vec<Change>,
@@ -102,6 +129,12 @@ impl History {
   fn pop(&mut self) -> Option<Change> {
     self.changes.pop()
   }
+}
+
+#[derive(Clone, Debug)]
+struct InteractingEvent {
+  event: Event,
+  state: FocusedEventState,
 }
 
 impl InteractingEvent {
@@ -146,6 +179,48 @@ impl InteractingEvent {
   }
 }
 
+#[derive(Debug, Clone)]
+struct RefocusingEvent(Arc<EventId>);
+
+impl RefocusingEvent {
+  fn new(event_id: &EventId) -> Self {
+    Self(Arc::new(event_id.clone()))
+  }
+
+  fn id(_ui: &Ui) -> egui::Id {
+    // because ui.id() doesn't seem to be consistent enough
+    egui::Id::null()
+  }
+
+  fn request_focus(ui: &Ui, event_id: &EventId) {
+    let refocusing_event = Self::new(event_id);
+    ui.memory().data.insert_temp(Self::id(ui), refocusing_event);
+  }
+
+  fn take(ui: &Ui) -> Option<Self> {
+    let egui_id = Self::id(ui);
+    let rfe = ui.memory().data.get_temp::<RefocusingEvent>(egui_id)?;
+    ui.memory().data.remove::<Self>(egui_id);
+
+    Some(rfe)
+  }
+
+  fn apply_focus(ui: &Ui) {
+    let rfe = match Self::take(ui) {
+      Some(x) => x,
+      None => return,
+    };
+
+    let event_id = rfe.0.as_ref();
+    let ui_id =
+      EventFocusRegistry::with(ui, |r| r.get_ui_id(event_id).copied());
+
+    if let Some(ui_id) = ui_id {
+      ui.memory().request_focus(ui_id);
+    }
+  }
+}
+
 #[derive(Clone, Debug)]
 struct DeletedEvent {
   event_id: EventId,
@@ -182,6 +257,15 @@ enum FocusedEventState {
 }
 
 impl ScheduleUi {
+  // pub(super) fn handle_focus_move(ui: &mut Ui) {
+  //   let current_focus = match ui.memory().focus() {
+  //     Some(f) => f,
+  //     None => return,
+  //   };
+
+  //   EventFocusRegistry::with_ui(ui, |r| r.reset())
+  // }
+
   fn interact_event_region_keyboard(
     &self,
     ui: &mut Ui,
@@ -348,6 +432,8 @@ impl ScheduleUi {
     let event_rect = self.event_rect(ui, layout, event)?;
 
     let resp = self.place_event_button(ui, event_rect, event);
+
+    EventFocusRegistry::with(ui, |r| r.register(resp.id, &event.id));
 
     let interaction = self
       .interact_event_region_keyboard(ui, &resp)
@@ -540,10 +626,6 @@ impl ScheduleUi {
     let id = response.id;
     let interaction = detect_interaction(response);
 
-    if interaction.is_some() {
-      response.request_focus();
-    }
-
     match interaction {
       None => (),
       Some(Interaction::Clicked)
@@ -634,10 +716,13 @@ impl ScheduleUi {
 
   pub(super) fn apply_interacting_events(&mut self, ui: &Ui) {
     if let Some(event) = InteractingEvent::take_commited_event(ui) {
+      RefocusingEvent::request_focus(ui, &event.id);
+
       let change = Change::new_changed(&self.events, event);
       change.apply(&mut self.events);
       self.history.save(change);
     }
+
     // commit deleted event
     if let Some(event_id) = DeletedEvent::take(ui) {
       if let Some(change) = Change::new_removed(&self.events, &event_id) {
@@ -645,6 +730,10 @@ impl ScheduleUi {
         self.history.save(change);
       }
     }
+  }
+
+  pub(super) fn refocus_edited_event(&self, ui: &Ui) {
+    RefocusingEvent::apply_focus(ui);
   }
 
   pub(super) fn handle_undo(&mut self, ui: &mut Ui) {
