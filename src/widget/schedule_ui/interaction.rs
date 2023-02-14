@@ -543,7 +543,24 @@ impl ScheduleUi {
     }
   }
 
-  fn handle_keyboard_focused_event_move(&mut self, _ui: &Ui) {}
+  fn handle_keyboard_focused_event_move(&mut self, ui: &Ui) -> Option<()> {
+    use Direction::*;
+
+    let focused_id = ui.memory().focus()?;
+    let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
+    let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
+
+    let event = self.events.iter_mut().find(|x| x.id == ev_id)?;
+
+    match dir {
+      Left => super::move_event(event, event.start + Duration::days(-1)),
+      Right => super::move_event(event, event.start + Duration::days(1)),
+      Up => super::move_event(event, event.start - self.min_event_duration),
+      Down => super::move_event(event, event.start + self.min_event_duration),
+    }
+
+    Some(())
+  }
 
   fn handle_keyboard_focused_event_resize(&mut self, _ui: &Ui) {}
 
