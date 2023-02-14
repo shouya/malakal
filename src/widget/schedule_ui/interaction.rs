@@ -484,13 +484,25 @@ impl ScheduleUi {
   }
 
   pub(super) fn handle_keyboard_focus_event(&mut self, ui: &Ui) {
+    self.handle_keyboard_focus_move(ui);
+    self.handle_keyboard_focused_event_move(ui);
+    self.handle_keyboard_focused_event_resize(ui);
+  }
+
+  fn key_direction_input(
+    &self,
+    ui: &Ui,
+    modifiers: Modifiers,
+  ) -> Option<Direction> {
     use Direction::*;
+    let pressed = |k| ui.input_mut().consume_key(modifiers, k);
 
-    let pressed = |k| ui.input_mut().consume_key(Modifiers::NONE, k);
-    let focus = ui.memory().focus();
-    let ev_id = focus.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
+    // do not interrupt interacting events
+    if InteractingEvent::get(ui).is_some() {
+      return None;
+    }
 
-    let dir = if pressed(Key::J) || pressed(Key::ArrowDown) {
+    if pressed(Key::J) || pressed(Key::ArrowDown) {
       Some(Down)
     } else if pressed(Key::K) || pressed(Key::ArrowUp) {
       Some(Up)
@@ -500,7 +512,16 @@ impl ScheduleUi {
       Some(Right)
     } else {
       None
-    };
+    }
+  }
+
+  fn handle_keyboard_focus_move(&mut self, ui: &Ui) {
+    use Direction::*;
+
+    let focus = ui.memory().focus();
+    let ev_id = focus.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
+
+    let dir = self.key_direction_input(ui, Modifiers::NONE);
 
     let events = self.events.as_slice();
 
@@ -521,6 +542,10 @@ impl ScheduleUi {
       }
     }
   }
+
+  fn handle_keyboard_focused_event_move(&mut self, _ui: &Ui) {}
+
+  fn handle_keyboard_focused_event_resize(&mut self, _ui: &Ui) {}
 
   fn scroll_event_into_view(&mut self, ui: &Ui, event_id: &EventId) {
     let rect = match EventFocusRegistry::get_event_rect(ui, event_id) {
