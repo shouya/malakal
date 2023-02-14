@@ -300,6 +300,11 @@ impl ScheduleUi {
     }
   }
 
+  fn scroll_horizontally(&mut self, days: i64) {
+    self.first_day += Duration::days(days);
+    self.mark_scope_updated();
+  }
+
   fn draw_current_time_indicator(&self, ui: &mut Ui, rect: Rect, alpha: f32) {
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
@@ -567,7 +572,7 @@ impl ScheduleUi {
     self.handle_new_event(ui, &response);
     self.handle_context_menu(&response);
     self.refocus_edited_event(ui);
-    self.handle_keyboard_focus_event(ui, &self.events);
+    self.handle_keyboard_focus_event(ui);
 
     self.handle_undo(ui);
   }
@@ -638,12 +643,10 @@ impl ScheduleUi {
 
       ui.horizontal(|ui| {
         if ui.button("<<").clicked() {
-          self.first_day -= Duration::days(self.day_count as i64);
-          self.mark_scope_updated();
+          self.scroll_horizontally(-(self.day_count as i64));
         }
         if ui.button("<").clicked() {
-          self.first_day -= Duration::days(1);
-          self.mark_scope_updated();
+          self.scroll_horizontally(-1);
         }
         if ui.button("Today").clicked() {
           self.first_day =
@@ -651,12 +654,10 @@ impl ScheduleUi {
           self.mark_scope_updated();
         }
         if ui.button(">").clicked() {
-          self.first_day += Duration::days(1);
-          self.mark_scope_updated();
+          self.scroll_horizontally(1);
         }
         if ui.button(">>").clicked() {
-          self.first_day += Duration::days(self.day_count as i64);
-          self.mark_scope_updated();
+          self.scroll_horizontally(self.day_count as i64);
         }
       });
       ui.separator();

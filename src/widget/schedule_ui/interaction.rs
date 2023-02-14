@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bimap::BiMap;
 use chrono::{Duration, Timelike};
@@ -92,27 +92,34 @@ impl Change {
 
 #[derive(Clone, Debug, Default)]
 struct EventFocusRegistry {
-  events: BiMap<egui::Id, EventId>,
+  events: BiMap<EventId, egui::Id>,
+  event_rects: HashMap<EventId, Rect>,
 }
 
 impl EventFocusRegistry {
-  fn with<F, A>(ui: &Ui, f: F) -> A
-  where
-    F: Fn(&mut Self) -> A,
-  {
-    f(ui.memory().data.get_temp_mut_or_default(ui.id()))
+  fn register(ui: &Ui, event_id: &EventId, resp: &Response) {
+    let mut mem = ui.memory();
+    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+    this.events.insert(event_id.clone(), resp.id);
+    this.event_rects.insert(event_id.clone(), resp.rect);
   }
 
-  fn register(&mut self, ui_id: egui::Id, event_id: &EventId) {
-    self.events.insert(ui_id, event_id.clone());
+  fn get_event_id<'a>(ui: &'a Ui, ui_id: egui::Id) -> Option<EventId> {
+    let mut mem = ui.memory();
+    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+    this.events.get_by_right(&ui_id).cloned()
   }
 
-  fn get_event_id(&self, ui_id: &egui::Id) -> Option<&EventId> {
-    self.events.get_by_left(ui_id)
+  fn get_ui_id(ui: &Ui, event_id: &EventId) -> Option<egui::Id> {
+    let mut mem = ui.memory();
+    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+    this.events.get_by_left(event_id).copied()
   }
 
-  fn get_ui_id(&self, event_id: &EventId) -> Option<&egui::Id> {
-    self.events.get_by_right(event_id)
+  fn get_event_rect(ui: &Ui, event_id: &EventId) -> Option<Rect> {
+    let mut mem = ui.memory();
+    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+    this.event_rects.get(event_id).copied()
   }
 }
 
@@ -216,10 +223,7 @@ impl RefocusingEvent {
     };
 
     let event_id = rfe.0.as_ref();
-    let ui_id =
-      EventFocusRegistry::with(ui, |r| r.get_ui_id(event_id).copied());
-
-    if let Some(ui_id) = ui_id {
+    if let Some(ui_id) = EventFocusRegistry::get_ui_id(ui, event_id) {
       ui.memory().request_focus(ui_id);
     }
   }
@@ -428,7 +432,7 @@ impl ScheduleUi {
 
     let resp = self.place_event_button(ui, event_rect, event);
 
-    EventFocusRegistry::with(ui, |r| r.register(resp.id, &event.id));
+    EventFocusRegistry::register(ui, &event.id, &resp);
 
     let interaction = self
       .interact_event_region_keyboard(ui, &resp)
@@ -479,14 +483,12 @@ impl ScheduleUi {
     Some(())
   }
 
-  pub(super) fn handle_keyboard_focus_event(&self, ui: &Ui, events: &[Event]) {
+  pub(super) fn handle_keyboard_focus_event(&mut self, ui: &Ui) {
     use Direction::*;
 
     let pressed = |k| ui.input_mut().consume_key(Modifiers::NONE, k);
     let focus = ui.memory().focus();
-    let ev_id = focus.and_then(|id| {
-      EventFocusRegistry::with(ui, |r| r.get_event_id(&id).cloned())
-    });
+    let ev_id = focus.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
 
     let dir = if pressed(Key::J) || pressed(Key::ArrowDown) {
       Some(Down)
@@ -500,16 +502,33 @@ impl ScheduleUi {
       None
     };
 
+    let events = self.events.as_slice();
+
     let new_focus = match (ev_id, dir) {
       (None, Some(_)) => events.first().map(|x| x.id.clone()),
       (Some(ev_id), Some(dir)) => find_next_focus(&ev_id, dir, events),
       (_, None) => None,
     };
 
-    match new_focus {
-      None => (),
-      Some(new_ev_id) => RefocusingEvent::request_focus(ui, &new_ev_id),
+    if let Some(new_ev_id) = new_focus {
+      RefocusingEvent::request_focus(ui, &new_ev_id);
+      self.scroll_event_into_view(ui, &new_ev_id);
+    } else {
+      match dir {
+        Some(Left) => self.scroll_horizontally(-1),
+        Some(Right) => self.scroll_horizontally(1),
+        _ => (),
+      }
     }
+  }
+
+  fn scroll_event_into_view(&mut self, ui: &Ui, event_id: &EventId) {
+    let rect = match EventFocusRegistry::get_event_rect(ui, event_id) {
+      Some(rect) => rect,
+      _ => return,
+    };
+
+    ui.scroll_to_rect(rect, Some(eframe::emath::Align::Center));
   }
 
   fn place_event_button(
@@ -888,7 +907,10 @@ fn find_juxtaposed_event(
     None => return None,
   };
 
-  if candidate_ev.id != ev.id {
+  // only consider the move successful if it actually moved a day.
+  if candidate_ev.id != ev.id
+    && candidate_ev.start.date_naive() != ev.start.date_naive()
+  {
     return Some(candidate_ev.id.clone());
   }
 
