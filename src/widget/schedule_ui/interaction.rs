@@ -515,20 +515,21 @@ impl ScheduleUi {
     }
   }
 
-  fn handle_keyboard_focus_move(&mut self, ui: &Ui) {
+  fn handle_keyboard_focus_move(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let focus = ui.memory().focus();
-    let ev_id = focus.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
+    let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
 
-    let dir = self.key_direction_input(ui, Modifiers::NONE);
-
+    let ev_id = ui
+      .memory()
+      .focus()
+      .and_then(|id| EventFocusRegistry::get_event_id(ui, id));
     let events = self.events.as_slice();
 
+    // focus the first event when there is no event
     let new_focus = match (ev_id, dir) {
-      (None, Some(_)) => events.first().map(|x| x.id.clone()),
-      (Some(ev_id), Some(dir)) => find_next_focus(&ev_id, dir, events),
-      (_, None) => None,
+      (None, _) => events.first().map(|x| x.id.clone()),
+      (Some(ev_id), dir) => find_next_focus(&ev_id, dir, events),
     };
 
     if let Some(new_ev_id) = new_focus {
@@ -536,11 +537,13 @@ impl ScheduleUi {
       self.scroll_event_into_view(ui, &new_ev_id);
     } else {
       match dir {
-        Some(Left) => self.scroll_horizontally(-1),
-        Some(Right) => self.scroll_horizontally(1),
+        Left => self.scroll_horizontally(-1),
+        Right => self.scroll_horizontally(1),
         _ => (),
       }
     }
+
+    Some(())
   }
 
   fn handle_keyboard_focused_event_move(&mut self, ui: &Ui) -> Option<()> {
@@ -562,7 +565,40 @@ impl ScheduleUi {
     Some(())
   }
 
-  fn handle_keyboard_focused_event_resize(&mut self, _ui: &Ui) {}
+  fn handle_keyboard_focused_event_resize(&mut self, ui: &Ui) -> Option<()> {
+    use Direction::*;
+
+    let focused_id = ui.memory().focus()?;
+    let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
+    let dir = self.key_direction_input(ui, Modifiers::SHIFT)?;
+
+    let event = self.events.iter_mut().find(|x| x.id == ev_id)?;
+
+    match dir {
+      Left => super::move_event_end(
+        event,
+        event.end + Duration::days(-1),
+        self.min_event_duration,
+      ),
+      Right => super::move_event_end(
+        event,
+        event.end + Duration::days(1),
+        self.min_event_duration,
+      ),
+      Up => super::move_event_end(
+        event,
+        event.end - self.min_event_duration,
+        self.min_event_duration,
+      ),
+      Down => super::move_event_end(
+        event,
+        event.end + self.min_event_duration,
+        self.min_event_duration,
+      ),
+    }
+
+    Some(())
+  }
 
   fn scroll_event_into_view(&mut self, ui: &Ui, event_id: &EventId) {
     let rect = match EventFocusRegistry::get_event_rect(ui, event_id) {
