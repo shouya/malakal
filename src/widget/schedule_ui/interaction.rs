@@ -520,10 +520,8 @@ impl ScheduleUi {
 
     let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
 
-    let ev_id = ui
-      .memory()
-      .focus()
-      .and_then(|id| EventFocusRegistry::get_event_id(ui, id));
+    let ui_id = ui.memory().focus();
+    let ev_id = ui_id.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
     let events = self.events.as_slice();
 
     // focus the first event when there is no event
