@@ -188,6 +188,10 @@ impl InteractingEvent {
   fn get_event(ui: &Ui) -> Option<Event> {
     Self::get(ui).map(|v| v.event)
   }
+
+  fn is_interacting(ui: &Ui) -> bool {
+    InteractingEvent::get(ui).is_some()
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -483,10 +487,11 @@ impl ScheduleUi {
     Some(())
   }
 
-  pub(super) fn handle_keyboard_focus_event(&mut self, ui: &Ui) {
+  pub(super) fn handle_hotkeys(&mut self, ui: &Ui) {
     self.handle_keyboard_focus_move(ui);
     self.handle_keyboard_focused_event_move(ui);
     self.handle_keyboard_focused_event_resize(ui);
+    self.handle_keyboard_new_event(ui);
   }
 
   fn key_direction_input(
@@ -498,7 +503,7 @@ impl ScheduleUi {
     let pressed = |k| ui.input_mut().consume_key(modifiers, k);
 
     // do not interrupt interacting events
-    if InteractingEvent::get(ui).is_some() {
+    if InteractingEvent::is_interacting(ui) {
       return None;
     }
 
@@ -515,10 +520,28 @@ impl ScheduleUi {
     }
   }
 
+  fn handle_keyboard_new_event(&mut self, ui: &Ui) -> Option<()> {
+    if InteractingEvent::is_interacting(ui) {
+      return None;
+    }
+
+    if !ui.input_mut().consume_key(Modifiers::NONE, Key::N) {
+      return None;
+    }
+
+    let mut event = self.new_event();
+    let last_event_end = self.events.iter().max_by_key(|x| x.end)?.end;
+    move_event(&mut event, last_event_end);
+
+    InteractingEvent::set(ui, event, FocusedEventState::Editing);
+
+    Some(())
+  }
+
   fn handle_keyboard_focus_move(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
+    let dir = self.key_direction_input(ui, Modifiers::NONE)?;
 
     let ui_id = ui.memory().focus();
     let ev_id = ui_id.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
