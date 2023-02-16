@@ -492,6 +492,7 @@ impl ScheduleUi {
     self.handle_keyboard_focused_event_move(ui);
     self.handle_keyboard_focused_event_resize(ui);
     self.handle_keyboard_new_event(ui);
+    self.handle_keyboard_delete_event(ui);
   }
 
   fn key_direction_input(
@@ -534,6 +535,26 @@ impl ScheduleUi {
     move_event(&mut event, last_event_end);
 
     InteractingEvent::set(ui, event, FocusedEventState::Editing);
+
+    Some(())
+  }
+
+  fn handle_keyboard_delete_event(&mut self, ui: &Ui) -> Option<()> {
+    if InteractingEvent::is_interacting(ui) {
+      return None;
+    }
+
+    let ui_id = ui.memory().focus()?;
+    let ev_id = EventFocusRegistry::get_event_id(ui, ui_id)?;
+
+    let del_key_pressed = ui.input_mut().consume_key(Modifiers::NONE, Key::X)
+      || ui.input_mut().consume_key(Modifiers::NONE, Key::Delete);
+
+    if !del_key_pressed {
+      return None;
+    }
+
+    DeletedEvent::set(ui, &ev_id);
 
     Some(())
   }
