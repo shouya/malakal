@@ -27,12 +27,26 @@ UI/UX features:
 - right-click on blank area to open calendar view
 - quickly jumping to dates in calendar view
 - current date/time indicator
+- full keyboard support for navigation/event manipulation
 
 Typical calendar features that are not supported by malakal:
 
 - synchronization/webdav: for now, you can use vdirsync for synchronization
 - command line query: malakal happily shares local ical files with [[https://github.com/pimutils/khal][khal]]
 - recurrent events: it may add a lot of complexity so it's not currently planned
+
+* Keyboard shortcuts
+
+| Keys            | Actions                            |
+|-----------------+------------------------------------|
+| Tab/Shift-Tab   | Focus previous/next event     |
+| Arrow keys      | Focus event on the given direction |
+| Ctrl+Arrow keys | Move focused event                 |
+| Shift+Up/Down   | Resize focused event               |
+| n               | Create new event                   |
+| x/Del           | Delete focused event               |
+
+Arrow keys can be substituted for vim-style navigation keys (hjkl) in all above cases.
 
 * Installation
 
