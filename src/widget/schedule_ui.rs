@@ -15,7 +15,7 @@ use self::{
 
 use crate::{
   event::{Event, EventBuilder},
-  util::{now, on_the_same_day, one_day, today, Date, DateTime},
+  util::{now, on_the_same_day, today, Date, DateTime},
   widget::CalendarBuilder,
 };
 
@@ -103,7 +103,8 @@ struct DraggingEventYOffset(f32);
 
 #[derive(Debug)]
 enum EventLayoutType {
-  Single(Date, [f32; 2]),
+  // start, end
+  Single(f32, f32),
   #[allow(unused)]
   AllDay([Date; 2]),
 }
@@ -146,10 +147,11 @@ impl ScheduleUi {
   ) -> Option<Rect> {
     let widget_rect = ui.max_rect();
     match self.layout_type(event) {
-      EventLayoutType::Single(date, y) => {
+      EventLayoutType::Single(start, end) => {
         let rel_x = layout.query(&event.id)?;
-        let day = self.date_to_day(date)?;
-        let rect = self.layout_event(widget_rect, day, y, rel_x);
+        let day = start as usize as f32;
+        let y = [(start - day).clamp(0.0, 1.0), (end - day).clamp(0.0, 1.0)];
+        let rect = self.layout_event(widget_rect, day as usize, y, rel_x);
         let margin = ui.style().visuals.clip_rect_margin / 2.0;
 
         Some(rect.shrink(margin))
@@ -814,32 +816,19 @@ impl ScheduleUi {
     (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
   }
 
+  fn to_normalized_time(&self, time: &DateTime) -> f32 {
+    let integer_part =
+      (time.naive_local().date() - self.first_day).num_days() as f32;
+    let fraction_part = time.naive_local().num_seconds_from_midnight() as f32
+      / SECS_PER_DAY as f32;
+
+    integer_part + fraction_part
+  }
+
   fn layout_type(&self, event: &Event) -> EventLayoutType {
-    if event.start.date_naive() == event.end.date_naive() {
-      // single day event
-      let date = event.start.date_naive();
-      let a = self.day_progress(&event.start);
-      let b = self.day_progress(&event.end);
-      return EventLayoutType::Single(date, [a, b]);
-    }
-
-    let midnight = (event.start.date_naive() + one_day())
-      .and_hms_opt(0, 0, 0)
-      .expect("date overflow");
-    if event.end.naive_local() == midnight {
-      let date = event.start.date_naive();
-      let a = self.day_progress(&event.start);
-      return EventLayoutType::Single(date, [a, 1.0]);
-    }
-
-    // event crossing day boundary - we will only show the part of first day.
-    if event.end.naive_local() > midnight {
-      let date = event.start.date_naive();
-      let a = self.day_progress(&event.start);
-      return EventLayoutType::Single(date, [a, 1.0]);
-    }
-
-    unimplemented!()
+    let start = self.to_normalized_time(&event.start);
+    let end = self.to_normalized_time(&event.end);
+    EventLayoutType::Single(start, end)
   }
 
   pub fn update_current_time(&mut self) {
