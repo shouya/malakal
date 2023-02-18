@@ -10,7 +10,7 @@ use humantime;
 
 use crate::{
   event::Event,
-  util::{local_now, on_the_same_day, reorder_times, today, utc_now, DateTime},
+  util::{local_now, on_the_same_day, reorder_times, today, DateTime},
 };
 
 use super::{
@@ -104,7 +104,7 @@ impl EventFocusRegistry {
     this.event_rects.insert(event_id.clone(), resp.rect);
   }
 
-  fn get_event_id<'a>(ui: &'a Ui, ui_id: egui::Id) -> Option<EventId> {
+  fn get_event_id(ui: &Ui, ui_id: egui::Id) -> Option<EventId> {
     let mut mem = ui.memory();
     let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
     this.events.get_by_right(&ui_id).cloned()
@@ -1048,7 +1048,7 @@ fn find_juxtaposed_event(
   };
 
   let t = ev.start + Duration::days(offset as i64);
-  let dist = |e: &&Event| (e.start - t).num_seconds().abs();
+  let dist = |e: &&Event| e.start.timestamp().abs_diff(t.timestamp());
   let candidate_ev = match events.iter().min_by_key(dist) {
     Some(ev) => ev,
     None => return None,
