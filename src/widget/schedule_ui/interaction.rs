@@ -10,7 +10,7 @@ use humantime;
 
 use crate::{
   event::Event,
-  util::{local_now, on_the_same_day, reorder_times, today, DateTime},
+  util::{local_now, on_the_same_day, reorder_times, today, utc_now, DateTime},
 };
 
 use super::{
@@ -588,7 +588,7 @@ impl ScheduleUi {
 
     // focus the first event when there is no event
     let new_focus = match (ev_id, dir) {
-      (None, _) => events.first().map(|x| x.id.clone()),
+      (None, _) => find_nearest_event(events, &self.current_time?),
       (Some(ev_id), dir) => find_next_focus(&ev_id, dir, events),
     };
 
@@ -932,6 +932,15 @@ impl ScheduleUi {
       change.reverse().apply(&mut self.events)
     }
   }
+}
+
+fn find_nearest_event(events: &[Event], now: &DateTime) -> Option<EventId> {
+  let now_ts = now.timestamp();
+
+  events
+    .iter()
+    .min_by_key(|e| e.start.timestamp().abs_diff(now_ts))
+    .map(|x| x.id.clone())
 }
 
 #[derive(Debug)]
