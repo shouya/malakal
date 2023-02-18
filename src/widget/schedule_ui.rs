@@ -1,7 +1,7 @@
 mod interaction;
 mod layout;
 
-use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
+use chrono::{Duration, FixedOffset, NaiveDateTime, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, pos2, vec2, Color32, Pos2, Rect, Response, Sense, Ui, Vec2,
@@ -238,6 +238,22 @@ impl ScheduleUi {
     let time = date.and_hms_opt(0, 0, 0).expect("date overflow")
       + Duration::seconds(snapped_seconds);
     time.and_local_timezone(self.timezone).single()
+  }
+
+  fn snap_to_nearest(&self, time: &DateTime) -> DateTime {
+    let timestamp = time.naive_local().timestamp();
+    let snapped_timestamp = (timestamp as f64
+      / self.snapping_duration.num_seconds() as f64)
+      .round() as i64
+      * self.snapping_duration.num_seconds();
+
+    let new_time =
+      NaiveDateTime::from_timestamp_millis(snapped_timestamp * 1000)
+        .expect("date overflow");
+    new_time
+      .and_local_timezone(self.timezone)
+      .single()
+      .expect("timezone conversion error")
   }
 
   fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
@@ -614,6 +630,11 @@ impl ScheduleUi {
     self.first_day.iter_days().take(self.day_count).collect()
   }
 
+  pub fn is_visible(&self, time: &DateTime) -> bool {
+    let day = time.naive_local().date() - self.first_day;
+    day.num_days() >= 0 && day.num_days() < self.day_count as i64
+  }
+
   pub fn load_events(&mut self, events: Vec<Event>) {
     // avoid new events interfering with history
     self.history.clear();
@@ -836,12 +857,8 @@ impl ScheduleUi {
       ((day_count_max + day_count_min) / 2.0).round() as usize;
 
     match optimal_day_count {
-      0 => {
-        self.day_count = 1;
-      }
-      n => {
-        self.day_count = n;
-      }
+      0 => self.day_count = 1,
+      n => self.day_count = n,
     }
 
     self.day_width = match day_space_width / self.day_count as f32 {

@@ -10,7 +10,7 @@ use humantime;
 
 use crate::{
   event::Event,
-  util::{on_the_same_day, reorder_times, DateTime},
+  util::{local_now, on_the_same_day, reorder_times, today, DateTime},
 };
 
 use super::{
@@ -531,8 +531,26 @@ impl ScheduleUi {
     }
 
     let mut event = self.new_event();
-    let last_event_end = self.events.iter().max_by_key(|x| x.end)?.end;
-    move_event(&mut event, last_event_end);
+    let today = today(&self.timezone);
+    let last_event_end_in_today = self
+      .events
+      .iter()
+      .filter(|x| x.end.date_naive() == today)
+      .max_by_key(|x| x.end)
+      .map(|x| x.end);
+
+    let last_event_end =
+      self.events.iter().max_by_key(|x| x.end).map(|x| x.end);
+    let nearest_snapping = {
+      let t = self.snap_to_nearest(&local_now());
+      self.is_visible(&t).then_some(t)
+    };
+
+    let new_event_start = last_event_end_in_today
+      .or(last_event_end)
+      .or(nearest_snapping)?;
+
+    move_event(&mut event, new_event_start);
 
     InteractingEvent::set(ui, event, FocusedEventState::Editing);
 
