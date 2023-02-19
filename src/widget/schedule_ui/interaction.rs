@@ -536,6 +536,7 @@ impl ScheduleUi {
       .events
       .iter()
       .filter(|x| x.end.date_naive() == today)
+      .filter(|x| x.end.num_seconds_from_midnight() > 0)
       .max_by_key(|x| x.end)
       .map(|x| x.end);
 
@@ -547,12 +548,15 @@ impl ScheduleUi {
     };
 
     let new_event_start = last_event_end_in_today
-      .or(last_event_end)
-      .or(nearest_snapping)?;
+      .or(nearest_snapping)
+      .or(last_event_end)?;
 
     move_event(&mut event, new_event_start);
+    let position = event.start_position_of_day();
 
     InteractingEvent::set(ui, event, FocusedEventState::Editing);
+
+    self.scroll_to_vertical_position(ui, position);
 
     Some(())
   }
@@ -666,6 +670,14 @@ impl ScheduleUi {
       _ => return,
     };
 
+    ui.scroll_to_rect(rect, Some(eframe::emath::Align::Center));
+  }
+
+  fn scroll_to_vertical_position(&mut self, ui: &Ui, position: f32) {
+    let mut rect = ui.max_rect();
+    rect.set_width(1.0);
+    rect.set_top(rect.top() + position * rect.height());
+    rect.set_height(1.0);
     ui.scroll_to_rect(rect, Some(eframe::emath::Align::Center));
   }
 

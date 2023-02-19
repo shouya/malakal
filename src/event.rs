@@ -1,8 +1,9 @@
-use chrono::{FixedOffset, Offset};
+use chrono::{FixedOffset, Offset, Timelike};
 use derive_builder::Builder;
 
 use crate::util::{now, utc_now, DateTime};
 
+const SECS_PER_DAY: u64 = 24 * 3600;
 pub type EventId = String;
 
 #[derive(Builder, Clone, Debug, PartialEq)]
@@ -39,6 +40,11 @@ pub struct Event {
 }
 
 impl Event {
+  pub(crate) fn start_position_of_day(&self) -> f32 {
+    (self.start.num_seconds_from_midnight() as f32 / SECS_PER_DAY as f32)
+      .clamp(0.0, 1.0)
+  }
+
   pub(crate) fn mark_changed(&mut self) {
     self.modified_at = now(&self.modified_at.offset().fix());
     self.changed = true;
