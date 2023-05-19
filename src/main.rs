@@ -1,4 +1,3 @@
-use std::fs;
 use std::str::FromStr;
 
 use anyhow::Context;
@@ -46,10 +45,6 @@ fn main() -> anyhow::Result<()> {
     path.push(format!("{APP_NAME}/{APP_NAME}.db"));
     path
   };
-
-  if fs::metadata(&db_path).is_err() {
-    fs::create_dir_all(db_path.parent().unwrap())?;
-  }
 
   let backend = backend::IndexedLocalDir::new(local_backend, db_path)?;
 
