@@ -1,3 +1,11 @@
+
+** 0.1.9
+
+- Fix the unreasonably long notification timeout (33 min -> 5 sec)
+- Fix crash on cross day event
+- Create `malakal` folder for database file if missing (#1, thanks @jakeisnt)
+- Keyboard navigation and event manipulation
+
 ** 0.1.8
 
 - Update calendar directory mtime on modification
