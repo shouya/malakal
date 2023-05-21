@@ -45,6 +45,7 @@ fn main() -> anyhow::Result<()> {
     path.push(format!("{APP_NAME}/{APP_NAME}.db"));
     path
   };
+
   let backend = backend::IndexedLocalDir::new(local_backend, db_path)?;
 
   let mut app = app::App::new(&config, 3, timezone, backend)?;
