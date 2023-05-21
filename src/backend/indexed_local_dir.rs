@@ -1,7 +1,9 @@
 use chrono::{Timelike, Utc};
 use rusqlite::{params, Connection};
 use std::time::Duration;
-use std::{cell::RefCell, fs::create_dir_all, fs::Metadata, path::Path, time::Instant};
+use std::{
+  cell::RefCell, fs::create_dir_all, fs::Metadata, path::Path, time::Instant,
+};
 
 use crate::util::DateTime;
 use crate::{
@@ -26,8 +28,8 @@ struct ICSFileEntry {
 
 impl IndexedLocalDir {
   pub fn new<P: AsRef<Path>>(backend: LocalDir, index_path: P) -> Result<Self> {
-    if !index_path.try_exists()? {
-      create_dir_all(index_path.parent().unwrap())?;
+    if !index_path.as_ref().try_exists()? {
+      create_dir_all(index_path.as_ref().parent().unwrap())?;
     }
 
     let conn = Connection::open(index_path)?;
