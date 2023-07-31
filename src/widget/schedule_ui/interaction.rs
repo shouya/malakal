@@ -753,22 +753,23 @@ impl ScheduleUi {
     };
 
     let job = layout_job(label.into());
-    let line_height = ui.fonts(|fonts| job.font_height(fonts));
-    let mut galley = ui.fonts(|fonts| fonts.layout_job(job));
 
-    if galley.size().y <= line_height {
-      // multiline
+    // first we attempt to fit the entire label within the button
+    let galley = ui.fonts(|fonts| fonts.layout_job(job));
+    if galley.rows.len() <= 1 {
       return (galley, false);
     }
 
-    for n in (0..(label.len() - 3)).rev() {
+    // if that fails, we try to fit the shrunk label with an ellipsis
+    for n in (0..(label.len().saturating_sub(3))).rev() {
       let text = format!("{}..", &label[0..n]);
-      galley = ui.fonts(|fonts| fonts.layout_job(layout_job(text)));
-      if galley.size().y <= line_height {
+      let galley = ui.fonts(|fonts| fonts.layout_job(layout_job(text)));
+      if galley.rows.len() <= 1 {
         return (galley, true);
       }
     }
 
+    // return the original label if we can't a fit
     (galley, false)
   }
 
