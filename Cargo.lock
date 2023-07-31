@@ -988,6 +988,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_autocomplete"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aed4abc1cbe64aa6a7910394e13d28a36fa19ff11803de0c1bbfddac473a58a8"
+dependencies = [
+ "egui",
+ "fuzzy-matcher",
+]
+
+[[package]]
 name = "egui_glow"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1240,6 +1250,15 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
 ]
 
 [[package]]
@@ -1676,6 +1695,7 @@ dependencies = [
  "derive_builder",
  "dirs",
  "eframe",
+ "egui_autocomplete",
  "env_logger",
  "filetime",
  "humantime",
@@ -2688,6 +2708,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.16",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
+dependencies = [
+ "cfg-if",
+ "once_cell",
 ]
 
 [[package]]

@@ -6,6 +6,7 @@ use eframe::egui::{
   self, text::LayoutJob, CursorIcon, Key, Label, LayerId, Modifiers, Rect,
   Response, Sense, Ui,
 };
+use egui_autocomplete::AutoCompleteTextEdit;
 use humantime;
 
 use crate::{
@@ -773,6 +774,17 @@ impl ScheduleUi {
     (galley, false)
   }
 
+  fn auto_suggest_event_titles(&self) -> Vec<String> {
+    let mut titles = self
+      .events
+      .iter()
+      .map(|x| x.title.clone())
+      .collect::<Vec<_>>();
+    titles.sort();
+    titles.dedup();
+    titles
+  }
+
   // Some(true) => commit change
   // Some(false) => discard change
   // None => still editing
@@ -782,7 +794,11 @@ impl ScheduleUi {
     rect: Rect,
     event: &mut Event,
   ) -> Option<bool> {
-    let editor = egui::TextEdit::singleline(&mut event.title);
+    let candidates = self.auto_suggest_event_titles();
+    let editor = AutoCompleteTextEdit::new(&mut event.title, &candidates, 5);
+    // uncomment the following to use pure egui textedit
+
+    // let editor = egui::TextEdit::singleline(&mut event.title);
     let resp = ui.put(rect, editor);
 
     // Anything dragging outside the textedit should be equivalent to
