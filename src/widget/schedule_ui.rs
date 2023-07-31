@@ -555,6 +555,10 @@ impl ScheduleUi {
     let combined_events: Vec<CombinedEvent> =
       combine_events(&self.events, interacting_event);
 
+    // get response at empty area first (other widgets will steal it)
+    let response_on_empty_area =
+      ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
+
     // background: ticks and current time indicator
     self.draw_ticks(ui, rect);
     self.draw_current_time_indicator(ui, rect, 1.0);
@@ -584,11 +588,8 @@ impl ScheduleUi {
     self.draw_time_marks(ui, rect);
 
     // interact with blank area for context menu and new event creation
-    let response =
-      ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
-
-    self.handle_new_event(ui, &response);
-    self.handle_context_menu(&response);
+    self.handle_new_event(ui, &response_on_empty_area);
+    self.handle_context_menu(&response_on_empty_area);
     self.refocus_edited_event(ui);
     self.handle_hotkeys(ui);
 
