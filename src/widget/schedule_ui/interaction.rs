@@ -933,11 +933,15 @@ impl ScheduleUi {
 
   pub(super) fn apply_interacting_events(&mut self, ui: &Ui) {
     if let Some(event) = InteractingEvent::take_commited_event(ui) {
-      RefocusingEvent::request_focus(ui, &event.id);
+      if event.title.is_empty() {
+        DeletedEvent::set(ui, &event.id);
+      } else {
+        RefocusingEvent::request_focus(ui, &event.id);
 
-      let change = Change::new_changed(&self.events, event);
-      change.apply(&mut self.events);
-      self.history.save(change);
+        let change = Change::new_changed(&self.events, event);
+        change.apply(&mut self.events);
+        self.history.save(change);
+      }
     }
 
     // commit deleted event
