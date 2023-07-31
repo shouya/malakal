@@ -97,29 +97,30 @@ struct EventFocusRegistry {
 }
 
 impl EventFocusRegistry {
+  fn with_this<R>(ui: &Ui, f: impl FnOnce(&mut Self) -> R) -> R {
+    ui.memory_mut(|mem| {
+      let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+      f(this)
+    })
+  }
+
   fn register(ui: &Ui, event_id: &EventId, resp: &Response) {
-    let mut mem = ui.memory();
-    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
-    this.events.insert(event_id.clone(), resp.id);
-    this.event_rects.insert(event_id.clone(), resp.rect);
+    Self::with_this(ui, |this| {
+      this.events.insert(event_id.clone(), resp.id);
+      this.event_rects.insert(event_id.clone(), resp.rect);
+    })
   }
 
   fn get_event_id(ui: &Ui, ui_id: egui::Id) -> Option<EventId> {
-    let mut mem = ui.memory();
-    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
-    this.events.get_by_right(&ui_id).cloned()
+    Self::with_this(ui, |this| this.events.get_by_right(&ui_id).cloned())
   }
 
   fn get_ui_id(ui: &Ui, event_id: &EventId) -> Option<egui::Id> {
-    let mut mem = ui.memory();
-    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
-    this.events.get_by_left(event_id).copied()
+    Self::with_this(ui, |this| this.events.get_by_left(event_id).copied())
   }
 
   fn get_event_rect(ui: &Ui, event_id: &EventId) -> Option<Rect> {
-    let mut mem = ui.memory();
-    let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
-    this.event_rects.get(event_id).copied()
+    Self::with_this(ui, |this| this.event_rects.get(event_id).copied())
   }
 }
 
@@ -154,12 +155,12 @@ impl InteractingEvent {
   }
 
   fn get(ui: &Ui) -> Option<Self> {
-    ui.memory().data.get_temp(Self::id())
+    ui.memory(|mem| mem.data.get_temp(Self::id()))
   }
 
   fn set(ui: &Ui, event: Event, state: FocusedEventState) {
     let value = InteractingEvent { event, state };
-    ui.memory().data.insert_temp(Self::id(), value)
+    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), value))
   }
 
   fn save(self, ui: &Ui) {
@@ -167,17 +168,17 @@ impl InteractingEvent {
   }
 
   fn discard(ui: &Ui) {
-    ui.memory().data.remove::<Self>(Self::id())
+    ui.memory_mut(|mem| mem.data.remove::<Self>(Self::id()))
   }
 
   fn commit(self, ui: &Ui) {
-    ui.memory().data.insert_temp(Self::id(), self.event);
+    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), self.event));
     Self::discard(ui);
   }
 
   fn take_commited_event(ui: &Ui) -> Option<Event> {
-    let event = ui.memory().data.get_temp(Self::id());
-    ui.memory().data.remove::<Event>(Self::id());
+    let event = ui.memory(|mem| mem.data.get_temp(Self::id()));
+    ui.memory_mut(|mem| mem.data.remove::<Event>(Self::id()));
     event
   }
 
@@ -209,13 +210,13 @@ impl RefocusingEvent {
 
   fn request_focus(ui: &Ui, event_id: &EventId) {
     let refocusing_event = Self::new(event_id);
-    ui.memory().data.insert_temp(Self::id(ui), refocusing_event);
+    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(ui), refocusing_event));
   }
 
   fn take(ui: &Ui) -> Option<Self> {
     let egui_id = Self::id(ui);
-    let rfe = ui.memory().data.get_temp::<RefocusingEvent>(egui_id)?;
-    ui.memory().data.remove::<Self>(egui_id);
+    let rfe = ui.memory(|mem| mem.data.get_temp::<RefocusingEvent>(egui_id))?;
+    ui.memory_mut(|mem| mem.data.remove::<Self>(egui_id));
 
     Some(rfe)
   }
@@ -228,7 +229,7 @@ impl RefocusingEvent {
 
     let event_id = rfe.0.as_ref();
     if let Some(ui_id) = EventFocusRegistry::get_ui_id(ui, event_id) {
-      ui.memory().request_focus(ui_id);
+      ui.memory_mut(|mem| mem.request_focus(ui_id));
     }
   }
 }
@@ -244,17 +245,19 @@ impl DeletedEvent {
   }
 
   fn set(ui: &Ui, event_id: &EventId) {
-    ui.memory().data.insert_temp(
-      Self::id(),
-      Self {
-        event_id: event_id.clone(),
-      },
-    );
+    ui.memory_mut(|mem| {
+      mem.data.insert_temp(
+        Self::id(),
+        Self {
+          event_id: event_id.clone(),
+        },
+      )
+    });
   }
 
   fn take(ui: &Ui) -> Option<EventId> {
-    let deleted_event = ui.memory().data.get_temp(Self::id());
-    ui.memory().data.remove::<Self>(Self::id());
+    let deleted_event = ui.memory(|mem| mem.data.get_temp(Self::id()));
+    ui.memory_mut(|mem| mem.data.remove::<Self>(Self::id()));
     deleted_event.map(|x: Self| x.event_id)
   }
 }
@@ -281,7 +284,7 @@ impl ScheduleUi {
     }
 
     // pressing enter on a focused event - change to edit mode
-    if ui.input_mut().consume_key(Modifiers::NONE, Key::Enter) {
+    if ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Enter)) {
       return Some(Editing);
     }
 
@@ -305,9 +308,9 @@ impl ScheduleUi {
     match detect_interaction(resp) {
       None => {
         if upper.contains(interact_pos) || lower.contains(interact_pos) {
-          ui.output().cursor_icon = CursorIcon::ResizeVertical;
+          ui.output_mut(|out| out.cursor_icon = CursorIcon::ResizeVertical);
         } else if event_rect.contains(interact_pos) {
-          ui.output().cursor_icon = CursorIcon::Grab;
+          ui.output_mut(|out| out.cursor_icon = CursorIcon::Grab);
         }
         None
       }
@@ -327,8 +330,8 @@ impl ScheduleUi {
         }
 
         let offset = DraggingEventYOffset(event_rect.top() - origin.y);
-        ui.memory().data.insert_temp(egui::Id::null(), offset);
-        if ui.input().modifiers.ctrl {
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::null(), offset));
+        if ui.input(|input| input.modifiers.ctrl) {
           Some(EventCloning)
         } else {
           Some(Dragging)
@@ -379,11 +382,11 @@ impl ScheduleUi {
     rect: Rect,
     set_time: impl FnOnce(DateTime) -> DateTime,
   ) -> Option<bool> {
-    if !ui.memory().is_anything_being_dragged() {
+    if !ui.memory(|mem| mem.is_anything_being_dragged()) {
       return Some(true);
     }
 
-    ui.output().cursor_icon = CursorIcon::ResizeVertical;
+    ui.output_mut(|out| out.cursor_icon = CursorIcon::ResizeVertical);
 
     let pointer_pos = self.relative_pointer_pos(ui).unwrap();
 
@@ -401,17 +404,15 @@ impl ScheduleUi {
     rect: Rect,
     set_time: impl FnOnce(DateTime) -> (DateTime, DateTime),
   ) -> Option<bool> {
-    if !ui.memory().is_anything_being_dragged() {
+    if !ui.memory(|mem| mem.is_anything_being_dragged()) {
       return Some(true);
     }
 
-    ui.output().cursor_icon = CursorIcon::Grabbing;
+    ui.output_mut(|out| out.cursor_icon = CursorIcon::Grabbing);
 
     let mut pointer_pos = self.relative_pointer_pos(ui).unwrap();
     if let Some(offset_y) = ui
-      .memory()
-      .data
-      .get_temp::<DraggingEventYOffset>(egui::Id::null())
+      .memory(|mem| mem.data.get_temp::<DraggingEventYOffset>(egui::Id::null()))
     {
       pointer_pos.y += offset_y.0;
     }
@@ -501,7 +502,7 @@ impl ScheduleUi {
     modifiers: Modifiers,
   ) -> Option<Direction> {
     use Direction::*;
-    let pressed = |k| ui.input_mut().consume_key(modifiers, k);
+    let pressed = |k| ui.input_mut(|input| input.consume_key(modifiers, k));
 
     // do not interrupt interacting events
     if InteractingEvent::is_interacting(ui) {
@@ -526,7 +527,7 @@ impl ScheduleUi {
       return None;
     }
 
-    if !ui.input_mut().consume_key(Modifiers::NONE, Key::N) {
+    if !ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::N)) {
       return None;
     }
 
@@ -566,11 +567,12 @@ impl ScheduleUi {
       return None;
     }
 
-    let ui_id = ui.memory().focus()?;
+    let ui_id = ui.memory(|mem| mem.focus())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, ui_id)?;
 
-    let del_key_pressed = ui.input_mut().consume_key(Modifiers::NONE, Key::X)
-      || ui.input_mut().consume_key(Modifiers::NONE, Key::Delete);
+    let del_key_pressed = ui
+      .input_mut(|mem| mem.consume_key(Modifiers::NONE, Key::X))
+      || ui.input_mut(|mem| mem.consume_key(Modifiers::NONE, Key::Delete));
 
     if !del_key_pressed {
       return None;
@@ -586,7 +588,7 @@ impl ScheduleUi {
 
     let dir = self.key_direction_input(ui, Modifiers::NONE)?;
 
-    let ui_id = ui.memory().focus();
+    let ui_id = ui.memory(|mem| mem.focus());
     let ev_id = ui_id.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
     let events = self.events.as_slice();
 
@@ -613,7 +615,7 @@ impl ScheduleUi {
   fn handle_keyboard_focused_event_move(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let focused_id = ui.memory().focus()?;
+    let focused_id = ui.memory(|mem| mem.focus())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
     let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
 
@@ -632,7 +634,7 @@ impl ScheduleUi {
   fn handle_keyboard_focused_event_resize(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let focused_id = ui.memory().focus()?;
+    let focused_id = ui.memory(|mem| mem.focus())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
     let dir = self.key_direction_input(ui, Modifiers::SHIFT)?;
 
@@ -751,8 +753,8 @@ impl ScheduleUi {
     };
 
     let job = layout_job(label.into());
-    let line_height = job.font_height(&ui.fonts());
-    let mut galley = ui.fonts().layout_job(job);
+    let line_height = ui.fonts(|fonts| job.font_height(fonts));
+    let mut galley = ui.fonts(|fonts| fonts.layout_job(job));
 
     if galley.size().y <= line_height {
       // multiline
@@ -761,7 +763,7 @@ impl ScheduleUi {
 
     for n in (0..(label.len() - 3)).rev() {
       let text = format!("{}..", &label[0..n]);
-      galley = ui.fonts().layout_job(layout_job(text));
+      galley = ui.fonts(|fonts| fonts.layout_job(layout_job(text)));
       if galley.size().y <= line_height {
         return (galley, true);
       }
@@ -785,13 +787,14 @@ impl ScheduleUi {
     // Anything dragging outside the textedit should be equivalent to
     // losing focus. Note: we still need to allow dragging within the
     // textedit widget to allow text selection, etc.
-    let anything_else_dragging = ui.memory().is_anything_being_dragged()
+    let anything_else_dragging = ui
+      .memory(|mem| mem.is_anything_being_dragged())
       && !resp.dragged()
       && !resp.drag_released();
 
     // We cannot use key_released here, because it will be taken
     // precedence by resp.lost_focus() and commit the change.
-    if ui.input().key_pressed(egui::Key::Escape) {
+    if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
       return Some(false);
     }
 
@@ -840,15 +843,15 @@ impl ScheduleUi {
         let new_state =
           self.assign_new_event_dates(ui, init_time, &mut event)?;
 
-        ui.memory().data.insert_temp(id, event.id.clone());
-        ui.memory().data.insert_temp(id, init_time);
+        ui.memory_mut(|mem| mem.data.insert_temp(id, event.id.clone()));
+        ui.memory_mut(|mem| mem.data.insert_temp(id, init_time));
 
         InteractingEvent::set(ui, event, new_state);
 
         return Some(());
       }
       Some(Interaction::DragReleased) => {
-        let event_id = ui.memory().data.get_temp(id)?;
+        let event_id = ui.memory(|mem| mem.data.get_temp(id))?;
         let mut value = InteractingEvent::get_id(ui, &event_id)?;
         value.state = Editing;
         value.save(ui);
@@ -856,8 +859,8 @@ impl ScheduleUi {
       Some(Interaction::Dragged)
         if response.dragged_by(egui::PointerButton::Primary) =>
       {
-        let event_id: String = ui.memory().data.get_temp(id)?;
-        let init_time = ui.memory().data.get_temp(id)?;
+        let event_id: String = ui.memory(|mem| mem.data.get_temp(id))?;
+        let init_time = ui.memory(|mem| mem.data.get_temp(id))?;
         let mut value = InteractingEvent::get_id(ui, &event_id)?;
         let new_state =
           self.assign_new_event_dates(ui, init_time, &mut value.event)?;
@@ -934,7 +937,8 @@ impl ScheduleUi {
   }
 
   pub(super) fn handle_undo(&mut self, ui: &mut Ui) {
-    let ctrl_z = ui.input_mut().consume_key(Modifiers::CTRL, egui::Key::Z);
+    let ctrl_z =
+      ui.input_mut(|input| input.consume_key(Modifiers::CTRL, egui::Key::Z));
 
     if !ctrl_z {
       return;
@@ -975,24 +979,24 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
   #[derive(Clone)]
   struct DetectionFinishFlag(bool);
 
-  let pointer = response.ctx.input().pointer.clone();
+  let pointer = response.ctx.input(|input| input.pointer.clone());
 
   let set_flag = |value| {
-    response
-      .ctx
-      .memory()
-      .data
-      .get_temp_mut_or(response.id, DetectionFinishFlag(false))
-      .0 = value;
+    response.ctx.memory_mut(|mem| {
+      mem
+        .data
+        .get_temp_mut_or(response.id, DetectionFinishFlag(false))
+        .0 = value
+    });
   };
 
   let get_flag = || {
-    response
-      .ctx
-      .memory()
-      .data
-      .get_temp_mut_or(response.id, DetectionFinishFlag(false))
-      .0
+    response.ctx.memory_mut(|mem| {
+      mem
+        .data
+        .get_temp_mut_or(response.id, DetectionFinishFlag(false))
+        .0
+    })
   };
 
   if !pointer.any_down() {
@@ -1018,7 +1022,8 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
       }
     }
 
-    let dt = response.ctx.input().time - pointer.press_start_time().unwrap();
+    let dt = response.ctx.input(|input| input.time)
+      - pointer.press_start_time().unwrap();
     if dt > MAX_CLICK_DURATION {
       set_flag(true);
       return Some(DragStarted { origin });

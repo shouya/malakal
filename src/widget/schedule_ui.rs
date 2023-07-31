@@ -758,7 +758,7 @@ impl ScheduleUi {
   }
 
   fn pointer_to_datetime_auto(&self, ui: &Ui, pos: Pos2) -> Option<DateTime> {
-    if ui.input().modifiers.shift_only() {
+    if ui.input(|input| input.modifiers.shift_only()) {
       // no snapping when shift is held down
       self.pointer_pos_to_datetime(pos)
     } else {
@@ -771,8 +771,8 @@ impl ScheduleUi {
   // whole widget
   fn relative_pointer_pos(&self, ui: &Ui) -> Option<Pos2> {
     let mut pointer_pos = None
-      .or_else(|| ui.input().pointer.interact_pos())
-      .or_else(|| ui.input().pointer.hover_pos())?;
+      .or_else(|| ui.input(|input| input.pointer.interact_pos()))
+      .or_else(|| ui.input(|input| input.pointer.hover_pos()))?;
     pointer_pos -= self.content_offset(ui.max_rect());
     Some(pointer_pos)
   }

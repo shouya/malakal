@@ -16,7 +16,7 @@ categories = ["gui"]
 opt-level = 2
 
 [dependencies]
-eframe = "0.19.0"
+eframe = "0.22.0"
 chrono = { version = "0.4.19", default-features = false, features = ["std"] }
 chrono-tz = "0.6.1"
 derive_builder = "0.10.2"
