@@ -82,6 +82,8 @@ impl App {
     let backend: Shared<dyn Backend> = shared(backend);
     let notifier = shared(Notifier::start(config, &backend)?);
 
+    let min_width = config.day_column_width.unwrap_or(260.0);
+
     let scheduler_ui = widget::ScheduleUiBuilder::default()
       .new_event_calendar(config.calendar_name.clone())
       .first_day(first_day)
@@ -90,6 +92,8 @@ impl App {
       .day_count(day_count)
       .refresh_requested(true)
       .scope_updated(true)
+      .day_width(min_width)
+      .day_min_width((min_width - 100.0).min(200.0))
       .build()
       .expect("failed to build scheduler");
 

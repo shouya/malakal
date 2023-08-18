@@ -1,7 +1,8 @@
 
 ** UNRELEASED
 
-- autocompletion for event title
+- auto-completion for event title
+- customization day column width
 
 ** 0.1.9
 

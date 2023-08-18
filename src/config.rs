@@ -20,6 +20,7 @@ pub struct Config {
   pub post_update_hook: Option<Vec<String>>,
   #[serde_as(as = "serde_with::DurationMilliSeconds<i64, Flexible>")]
   pub post_update_hook_delay: Duration,
+  pub day_column_width: Option<f32>,
 }
 
 pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
@@ -35,6 +36,7 @@ impl Default for Config {
       notifier_blacklist_processes: vec![],
       post_update_hook: None,
       post_update_hook_delay: Duration::seconds(30),
+      day_column_width: None,
     }
   }
 }

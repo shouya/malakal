@@ -21,3 +21,6 @@ notifier_blacklist_processes = ["zoom"]
 # run "vdirsyncer sync" 30 seconds after any modification
 post_update_hook_delay = 30
 post_update_hook = ["/usr/bin/vdirsyncer", "sync"]
+
+# width of the day column
+day_column_width = 260.0
