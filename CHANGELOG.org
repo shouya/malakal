@@ -1,4 +1,8 @@
 
+** UNRELEASED
+
+- autocompletion for event title
+
 ** 0.1.9
 
 - Fix the unreasonably long notification timeout (33 min -> 5 sec)
