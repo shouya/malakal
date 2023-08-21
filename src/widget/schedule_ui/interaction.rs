@@ -795,7 +795,9 @@ impl ScheduleUi {
     event: &mut Event,
   ) -> Option<bool> {
     let candidates = self.auto_suggest_event_titles();
-    let editor = AutoCompleteTextEdit::new(&mut event.title, &candidates, 5);
+    let editor = AutoCompleteTextEdit::new(&mut event.title, &candidates)
+      .max_suggestions(5)
+      .highlight_matches(true);
     // uncomment the following to use pure egui textedit
 
     // let editor = egui::TextEdit::singleline(&mut event.title);

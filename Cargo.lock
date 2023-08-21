@@ -989,9 +989,9 @@ dependencies = [
 
 [[package]]
 name = "egui_autocomplete"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aed4abc1cbe64aa6a7910394e13d28a36fa19ff11803de0c1bbfddac473a58a8"
+checksum = "134cf49869bd8849d130ddb88f0c7bef92d0e66199d21a0f94583c74aa1cdadd"
 dependencies = [
  "egui",
  "fuzzy-matcher",
