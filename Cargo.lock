@@ -367,12 +367,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "atomic_refcell"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79d6dc922a2792b006573f60b2648076355daeae5ce9cb59507e5908c9625d31"
-
-[[package]]
 name = "atspi"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1093,12 +1087,6 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
 name = "ecolor"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e479a7fa3f23d4e794f8b2f8b3568dd4e47886ad1b12c9c095e141cb591eb63"
-
-[[package]]
-name = "ecolor"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03cfe80b1890e1a8cdbffc6044d6872e814aaf6011835a2a5e2db0e5c5c4ef4e"
@@ -1115,7 +1103,7 @@ dependencies = [
  "bytemuck",
  "cocoa",
  "document-features",
- "egui 0.26.2",
+ "egui",
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
@@ -1142,24 +1130,13 @@ dependencies = [
 
 [[package]]
 name = "egui"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3aef8ec3ae1b772f340170c65bf27d5b8c28f543a0116c844d2ac08d01123e7"
-dependencies = [
- "ahash 0.8.10",
- "epaint 0.22.0",
- "nohash-hasher",
-]
-
-[[package]]
-name = "egui"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "180f595432a5b615fc6b74afef3955249b86cfea72607b40740a4cd60d5297d0"
 dependencies = [
  "accesskit",
  "ahash 0.8.10",
- "epaint 0.26.2",
+ "epaint",
  "log",
  "nohash-hasher",
 ]
@@ -1172,8 +1149,8 @@ checksum = "86f2d75e1e70228e7126f828bac05f9fe0e7ea88e9660c8cebe609bb114c61d4"
 dependencies = [
  "bytemuck",
  "document-features",
- "egui 0.26.2",
- "epaint 0.26.2",
+ "egui",
+ "epaint",
  "log",
  "thiserror",
  "type-map",
@@ -1190,7 +1167,7 @@ checksum = "aa4d44f8d89f70d4480545eb2346b76ea88c3022e9f4706cebc799dbe8b004a2"
 dependencies = [
  "accesskit_winit",
  "arboard",
- "egui 0.26.2",
+ "egui",
  "log",
  "raw-window-handle 0.6.0",
  "smithay-clipboard",
@@ -1201,11 +1178,12 @@ dependencies = [
 
 [[package]]
 name = "egui_autocomplete"
-version = "0.2.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134cf49869bd8849d130ddb88f0c7bef92d0e66199d21a0f94583c74aa1cdadd"
+checksum = "b7ae8ac4b7972adbff2527e86862473b27493197760045465e27ff5c01ecf568"
 dependencies = [
- "egui 0.22.0",
+ "eframe",
+ "egui",
  "fuzzy-matcher",
 ]
 
@@ -1216,7 +1194,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a08e3be8728b4c59493dbfec041c657e6725bdeafdbd49aef3f1dbb9e551fa01"
 dependencies = [
  "bytemuck",
- "egui 0.26.2",
+ "egui",
  "glow",
  "log",
  "memoffset 0.9.0",
@@ -1230,12 +1208,6 @@ name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
-
-[[package]]
-name = "emath"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3857d743a6e0741cdd60b622a74c7a36ea75f5f8f11b793b41d905d2c9721a4b"
 
 [[package]]
 name = "emath"
@@ -1282,21 +1254,6 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09333964d4d57f40a85338ba3ca5ed4716070ab184dcfed966b35491c5c64f3b"
-dependencies = [
- "ab_glyph",
- "ahash 0.8.10",
- "atomic_refcell",
- "ecolor 0.22.0",
- "emath 0.22.0",
- "nohash-hasher",
- "parking_lot",
-]
-
-[[package]]
-name = "epaint"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77b9fdf617dd7f58b0c8e6e9e4a1281f730cde0831d40547da446b2bb76a47af"
@@ -1304,8 +1261,8 @@ dependencies = [
  "ab_glyph",
  "ahash 0.8.10",
  "bytemuck",
- "ecolor 0.26.2",
- "emath 0.26.2",
+ "ecolor",
+ "emath",
  "log",
  "nohash-hasher",
  "parking_lot",
@@ -3260,9 +3217,9 @@ dependencies = [
 
 [[package]]
 name = "thread_local"
-version = "1.1.7"
+version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
+checksum = "8b9ef9bad013ada3808854ceac7b46812a6465ba368859a37e2100283d2d719c"
 dependencies = [
  "cfg-if",
  "once_cell",
