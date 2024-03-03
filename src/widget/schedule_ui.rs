@@ -556,8 +556,11 @@ impl ScheduleUi {
       combine_events(&self.events, interacting_event);
 
     // get response at empty area first (other widgets will steal it)
-    let response_on_empty_area =
-      ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
+    let response_on_empty_area = ui.interact(
+      ui.max_rect(),
+      ui.id().with("empty_area"),
+      Sense::click_and_drag(),
+    );
 
     // background: ticks and current time indicator
     self.draw_ticks(ui, rect);
