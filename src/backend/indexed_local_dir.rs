@@ -92,7 +92,6 @@ LIMIT 1
     let mut stmt = conn.prepare_cached("SELECT event_id FROM events")?;
     let event_ids = stmt
       .query_map([], |row| row.get::<_, EventId>(0))?
-      .into_iter()
       .filter_map(|x| x.ok())
       .collect();
     Ok(event_ids)
@@ -252,7 +251,6 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
     )?;
     let event_ids = stmt
       .query_map([start, end], |row| row.get::<_, EventId>(0))?
-      .into_iter()
       .filter_map(|x| x.ok())
       .collect();
     Ok(event_ids)
