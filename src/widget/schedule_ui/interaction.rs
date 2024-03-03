@@ -700,6 +700,12 @@ impl ScheduleUi {
       resp.clone().on_hover_text(event.title.clone());
     }
 
+    Self::event_context_menu(event, &resp);
+
+    resp
+  }
+
+  fn event_context_menu(event: &Event, resp: &Response) {
     let format_time = |time: DateTime| {
       if time.second() == 0 {
         time.format("%H:%M")
@@ -708,7 +714,7 @@ impl ScheduleUi {
       }
     };
 
-    resp.clone().context_menu(|ui| {
+    resp.context_menu(|ui| {
       if let Some(desc) = &event.description {
         ui.label(desc.to_string());
       }
@@ -734,8 +740,6 @@ impl ScheduleUi {
         ui.close_menu();
       }
     });
-
-    resp
   }
 
   fn shorten_event_label(

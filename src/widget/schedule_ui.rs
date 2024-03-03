@@ -593,9 +593,9 @@ impl ScheduleUi {
     // interact with blank area for context menu and new event creation
     self.handle_new_event(ui, &response_on_empty_area);
     self.handle_context_menu(&response_on_empty_area);
+
     self.refocus_edited_event(ui);
     self.handle_hotkeys(ui);
-
     self.handle_undo(ui);
   }
 
@@ -659,7 +659,7 @@ impl ScheduleUi {
   }
 
   fn handle_context_menu(&mut self, response: &Response) {
-    response.clone().context_menu(|ui| {
+    response.context_menu(|ui| {
       if ui.button("Refresh").clicked() {
         self.refresh_requested = true;
         self.mark_scope_updated();
