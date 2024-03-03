@@ -907,7 +907,7 @@ fn combine_events(
   out_events
 }
 
-pub(self) fn move_event_end(
+fn move_event_end(
   event: &mut Event,
   new_end: DateTime,
   min_event_duration: Duration,
@@ -926,7 +926,7 @@ pub(self) fn move_event_end(
   }
 }
 
-pub(self) fn move_event_start(
+fn move_event_start(
   event: &mut Event,
   new_start: DateTime,
   min_event_duration: Duration,
@@ -945,7 +945,7 @@ pub(self) fn move_event_start(
   }
 }
 
-pub(self) fn move_event(event: &mut Event, new_start: DateTime) {
+fn move_event(event: &mut Event, new_start: DateTime) {
   let duration = event.end - event.start;
   let new_end = new_start + duration;
 
