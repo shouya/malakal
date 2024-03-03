@@ -206,7 +206,7 @@ impl RefocusingEvent {
 
   fn id(_ui: &Ui) -> egui::Id {
     // because ui.id() doesn't seem to be consistent enough
-    egui::Id::null()
+    egui::Id::NULL
   }
 
   fn request_focus(ui: &Ui, event_id: &EventId) {
@@ -331,7 +331,7 @@ impl ScheduleUi {
         }
 
         let offset = DraggingEventYOffset(event_rect.top() - origin.y);
-        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::null(), offset));
+        ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::NULL, offset));
         if ui.input(|input| input.modifiers.ctrl) {
           Some(EventCloning)
         } else {
@@ -412,8 +412,8 @@ impl ScheduleUi {
     ui.output_mut(|out| out.cursor_icon = CursorIcon::Grabbing);
 
     let mut pointer_pos = self.relative_pointer_pos(ui).unwrap();
-    if let Some(offset_y) = ui
-      .memory(|mem| mem.data.get_temp::<DraggingEventYOffset>(egui::Id::null()))
+    if let Some(offset_y) =
+      ui.memory(|mem| mem.data.get_temp::<DraggingEventYOffset>(egui::Id::NULL))
     {
       pointer_pos.y += offset_y.0;
     }
@@ -700,6 +700,12 @@ impl ScheduleUi {
       resp.clone().on_hover_text(event.title.clone());
     }
 
+    Self::event_context_menu(event, &resp);
+
+    resp
+  }
+
+  fn event_context_menu(event: &Event, resp: &Response) {
     let format_time = |time: DateTime| {
       if time.second() == 0 {
         time.format("%H:%M")
@@ -708,7 +714,7 @@ impl ScheduleUi {
       }
     };
 
-    resp.clone().context_menu(|ui| {
+    resp.context_menu(|ui| {
       if let Some(desc) = &event.description {
         ui.label(desc.to_string());
       }
@@ -734,8 +740,6 @@ impl ScheduleUi {
         ui.close_menu();
       }
     });
-
-    resp
   }
 
   fn shorten_event_label(

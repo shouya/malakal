@@ -556,8 +556,11 @@ impl ScheduleUi {
       combine_events(&self.events, interacting_event);
 
     // get response at empty area first (other widgets will steal it)
-    let response_on_empty_area =
-      ui.interact(ui.max_rect(), ui.id().with("empty_area"), Sense::drag());
+    let response_on_empty_area = ui.interact(
+      ui.max_rect(),
+      ui.id().with("empty_area"),
+      Sense::click_and_drag(),
+    );
 
     // background: ticks and current time indicator
     self.draw_ticks(ui, rect);
@@ -590,9 +593,9 @@ impl ScheduleUi {
     // interact with blank area for context menu and new event creation
     self.handle_new_event(ui, &response_on_empty_area);
     self.handle_context_menu(&response_on_empty_area);
+
     self.refocus_edited_event(ui);
     self.handle_hotkeys(ui);
-
     self.handle_undo(ui);
   }
 
@@ -656,7 +659,7 @@ impl ScheduleUi {
   }
 
   fn handle_context_menu(&mut self, response: &Response) {
-    response.clone().context_menu(|ui| {
+    response.context_menu(|ui| {
       if ui.button("Refresh").clicked() {
         self.refresh_requested = true;
         self.mark_scope_updated();
@@ -907,7 +910,7 @@ fn combine_events(
   out_events
 }
 
-pub(self) fn move_event_end(
+fn move_event_end(
   event: &mut Event,
   new_end: DateTime,
   min_event_duration: Duration,
@@ -926,7 +929,7 @@ pub(self) fn move_event_end(
   }
 }
 
-pub(self) fn move_event_start(
+fn move_event_start(
   event: &mut Event,
   new_start: DateTime,
   min_event_duration: Duration,
@@ -945,7 +948,7 @@ pub(self) fn move_event_start(
   }
 }
 
-pub(self) fn move_event(event: &mut Event, new_start: DateTime) {
+fn move_event(event: &mut Event, new_start: DateTime) {
   let duration = event.end - event.start;
   let new_end = new_start + duration;
 
