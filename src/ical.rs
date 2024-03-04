@@ -106,8 +106,8 @@ fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<DateTime<Utc>> {
   use chrono_tz::Tz;
   use std::str::FromStr;
 
-  if let Ok(t) = DateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ") {
-    return Ok(t.with_timezone(&Utc));
+  if let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ") {
+    return Ok(t.and_utc());
   }
 
   if let Some(tz) = tzid.and_then(|tz| Tz::from_str(tz).ok()) {
