@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use bimap::BiMap;
 use chrono::{Duration, Timelike};
 use eframe::egui::{
-  self, text::LayoutJob, CursorIcon, Key, Label, LayerId, Modifiers, Rect,
-  Response, Sense, Ui,
+  self, text::LayoutJob, CursorIcon, EventFilter, Key, KeyboardShortcut, Label,
+  LayerId, Modifiers, Rect, Response, Sense, Ui,
 };
 use egui_autocomplete::AutoCompleteTextEdit;
 use humantime;
@@ -490,9 +490,9 @@ impl ScheduleUi {
   }
 
   pub(super) fn handle_hotkeys(&mut self, ui: &Ui) {
-    self.handle_keyboard_focus_move(ui);
-    self.handle_keyboard_focused_event_move(ui);
     self.handle_keyboard_focused_event_resize(ui);
+    self.handle_keyboard_focused_event_move(ui);
+    self.handle_keyboard_focus_move(ui);
     self.handle_keyboard_new_event(ui);
     self.handle_keyboard_delete_event(ui);
   }
@@ -503,7 +503,9 @@ impl ScheduleUi {
     modifiers: Modifiers,
   ) -> Option<Direction> {
     use Direction::*;
-    let pressed = |k| ui.input_mut(|input| input.consume_key(modifiers, k));
+    let shortcut = |k| KeyboardShortcut::new(modifiers, k);
+    let pressed =
+      |k| ui.input_mut(|input| input.consume_shortcut(&shortcut(k)));
 
     // do not interrupt interacting events
     if InteractingEvent::is_interacting(ui) {
@@ -694,6 +696,7 @@ impl ScheduleUi {
 
     let button = egui::Button::new(layout).sense(Sense::click_and_drag());
     let resp = ui.put(rect, button);
+    disable_built_in_keyboard_focus_navigation(&resp);
 
     if clipped {
       // text is clipped, show a tooltip
@@ -802,9 +805,10 @@ impl ScheduleUi {
     let editor = AutoCompleteTextEdit::new(&mut event.title, &candidates)
       .max_suggestions(5)
       .highlight_matches(true);
-    // uncomment the following to use pure egui textedit
 
+    // uncomment the following to use pure egui textedit
     // let editor = egui::TextEdit::singleline(&mut event.title);
+
     let resp = ui.put(rect, editor);
 
     // Anything dragging outside the textedit should be equivalent to
@@ -826,6 +830,7 @@ impl ScheduleUi {
     }
 
     resp.request_focus();
+    disable_built_in_keyboard_focus_navigation(&resp);
     None
   }
 
@@ -1124,4 +1129,17 @@ fn find_adjacent_event(
   }
 
   Some(events[new_i as usize].id.clone())
+}
+
+fn disable_built_in_keyboard_focus_navigation(resp: &Response) {
+  // avoid built-in arrow navigation
+  let event_filter = EventFilter {
+    horizontal_arrows: true,
+    vertical_arrows: true,
+    ..Default::default()
+  };
+
+  resp
+    .ctx
+    .memory_mut(|m| m.set_focus_lock_filter(resp.id, event_filter));
 }
