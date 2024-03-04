@@ -1,7 +1,7 @@
 use chrono::Duration;
 use log::warn;
 use notify_rust::Notification;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 use timer::Timer;
 
 use crate::backend::Backend;

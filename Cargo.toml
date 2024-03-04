@@ -18,31 +18,31 @@ opt-level = 2
 [dependencies]
 eframe = "0.26.2"
 chrono = { version = "0.4.34", default-features = false, features = ["std"] }
-chrono-tz = "0.6.3"
-derive_builder = "0.10.2"
+chrono-tz = "0.8.6"
+derive_builder = "0.20.0"
 intervaltree = "0.2.7"
-uuid = { version = "0.8.2", features = ["v4"] }
+uuid = { version = "1.7.0", features = ["v4"] }
 # only for ics generation
 ics = "0.5.8"
 # only for ics parsing
-ical = { version = "0.7.0", features = ["ical"] }
+ical = { version = "0.10.0", features = ["ical"] }
 
 # for webdav support (work in progress)
 # kitchen-fridge = { git = "https://github.com/shouya/kitchen-fridge.git" }
 
-rusqlite = {version = "0.26.3", features = ["bundled", "chrono"] }
+rusqlite = {version = "0.31.0", features = ["bundled", "chrono"] }
 anyhow = { version = "1.0.80" }
 log = "0.4.21"
-env_logger = "0.9.3"
+env_logger = "0.11.2"
 regex = "1.10.3"
-toml = "0.5.11"
+toml = "0.8.10"
 serde = "1.0.197"
 humantime = "2.1.0"
 notify-rust = { version = "4.10.0" }
 timer = "0.2.0"
-sysinfo = "0.24.7"
-serde_with = { version = "1.14.0", features = ["chrono"] }
-dirs = "4.0.0"
+sysinfo = "0.30.6"
+serde_with = { version = "3.6.1", features = ["chrono"] }
+dirs = "5.0.1"
 filetime = "0.2.23"
 bimap = "0.6.3"
 egui_autocomplete = "5.0.0"

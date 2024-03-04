@@ -73,7 +73,9 @@ impl Config {
       std::fs::write(&config_file, default_conf)?;
     }
 
-    let mut config: Config = toml::from_slice(&std::fs::read(config_file)?)?;
+    let config_bytes = std::fs::read(config_file)?;
+    let config_str = std::str::from_utf8(&config_bytes)?;
+    let mut config: Config = toml::from_str(config_str)?;
     config.normalize()?;
 
     let calendar_location = PathBuf::from(config.calendar_location.as_str());

@@ -128,11 +128,11 @@ fn parse_duration(s: &str) -> Result<Duration> {
   let mut dur = Duration::zero();
   if let Some(m) = cap.name("h") {
     let hours = m.as_str().parse::<i64>()?;
-    dur = dur + Duration::hours(hours);
+    dur += Duration::hours(hours);
   }
   if let Some(m) = cap.name("m") {
     let mins = m.as_str().parse::<i64>()?;
-    dur = dur + Duration::minutes(mins);
+    dur += Duration::minutes(mins);
   }
 
   Ok(dur)

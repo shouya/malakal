@@ -864,7 +864,7 @@ impl ScheduleUi {
 }
 
 fn new_event_id() -> EventId {
-  format!("{}", Uuid::new_v4().to_hyphenated())
+  format!("{}", Uuid::new_v4().hyphenated())
 }
 
 enum CombinedEvent {
