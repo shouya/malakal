@@ -17,13 +17,13 @@ opt-level = 2
 
 [dependencies]
 eframe = "0.26.2"
-chrono = { version = "0.4.19", default-features = false, features = ["std"] }
-chrono-tz = "0.6.1"
+chrono = { version = "0.4.34", default-features = false, features = ["std"] }
+chrono-tz = "0.6.3"
 derive_builder = "0.10.2"
 intervaltree = "0.2.7"
 uuid = { version = "0.8.2", features = ["v4"] }
 # only for ics generation
-ics = "0.5.7"
+ics = "0.5.8"
 # only for ics parsing
 ical = { version = "0.7.0", features = ["ical"] }
 
@@ -31,20 +31,20 @@ ical = { version = "0.7.0", features = ["ical"] }
 # kitchen-fridge = { git = "https://github.com/shouya/kitchen-fridge.git" }
 
 rusqlite = {version = "0.26.3", features = ["bundled", "chrono"] }
-anyhow = { version = "1.0.53" }
-log = "0.4.14"
-env_logger = "0.9.0"
-regex = "1.5.4"
-toml = "0.5.8"
-serde = "1.0.136"
+anyhow = { version = "1.0.80" }
+log = "0.4.21"
+env_logger = "0.9.3"
+regex = "1.10.3"
+toml = "0.5.11"
+serde = "1.0.197"
 humantime = "2.1.0"
-notify-rust = { version = "4.7.0" }
+notify-rust = { version = "4.10.0" }
 timer = "0.2.0"
-sysinfo = "0.24.3"
+sysinfo = "0.24.7"
 serde_with = { version = "1.14.0", features = ["chrono"] }
 dirs = "4.0.0"
-filetime = "0.2.17"
-bimap = "0.6.2"
+filetime = "0.2.23"
+bimap = "0.6.3"
 egui_autocomplete = "5.0.0"
 
 [profile.release]

@@ -1,5 +1,5 @@
 use anyhow::{bail, ensure};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use ical::property::Property;
 
 use crate::event::{Event, EventBuilder};
@@ -103,17 +103,16 @@ fn to_timestamp<Tz: chrono::TimeZone>(time: DateTime<Tz>) -> String {
 }
 
 fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<DateTime<Utc>> {
-  use chrono::offset::TimeZone;
   use chrono_tz::Tz;
   use std::str::FromStr;
 
-  if let Ok(t) = Utc.datetime_from_str(s, "%Y%m%dT%H%M%SZ") {
-    return Ok(t);
+  if let Ok(t) = DateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ") {
+    return Ok(t.with_timezone(&Utc));
   }
 
   if let Some(tz) = tzid.and_then(|tz| Tz::from_str(tz).ok()) {
-    if let Ok(t) = tz.datetime_from_str(s, "%Y%m%dT%H%M%S") {
-      return Ok(t.with_timezone(&Utc));
+    if let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%S") {
+      return Ok(t.and_local_timezone(tz).unwrap().with_timezone(&Utc));
     }
   }
 
