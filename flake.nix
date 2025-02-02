@@ -21,9 +21,14 @@
         naersk-lib = pkgs.callPackage naersk {};
       in
       {
-        defaultPackage = naersk-lib.buildPackage {
+        defaultPackage = with pkgs; naersk-lib.buildPackage {
+          nativeBuildInputs = [ makeWrapper ];
           buildInputs = xDeps;
           src = ./.;
+          postInstall = ''
+          wrapProgram "$out/bin/malakal" \
+            --set LD_LIBRARY_PATH "${lib.makeLibraryPath xDeps}"
+          '';
         };
         devShell = with pkgs; mkShell {
           buildInputs = [
