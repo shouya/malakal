@@ -54,11 +54,18 @@ fn main() -> anyhow::Result<()> {
 
   let options = eframe::NativeOptions::default();
 
-  let _ = eframe::run_native(
+  let eframe_res = eframe::run_native(
     APP_NAME,
     options,
     Box::new(|ctx| Box::new(app.setup(ctx))),
   );
+  match eframe_res {
+    Ok(o) => o,
+    Err(e) => {
+      log::error!("Error running gui: {:?}", e);
+      std::process::exit(1);
+    }
+  };
 
   Ok(())
 }
