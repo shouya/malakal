@@ -98,9 +98,6 @@ pub struct ScheduleUi {
 
 type EventId = String;
 
-#[derive(Clone, Copy, Debug)]
-struct DraggingEventYOffset(f32);
-
 #[derive(Debug)]
 enum EventLayoutType {
   // start, end
