@@ -536,6 +536,12 @@ impl ScheduleUi {
 
     let mut event = self.new_event();
     let today = today(&self.timezone);
+    let focused_event = ui
+      .memory(|mem| mem.focus())
+      .and_then(|id| EventFocusRegistry::get_event_id(ui, id))
+      .and_then(|id| self.events.iter().find(|x| x.id == id))
+      .map(|x| x.end);
+
     let last_event_end_in_today = self
       .events
       .iter()
@@ -551,7 +557,8 @@ impl ScheduleUi {
       self.is_visible(&t).then_some(t)
     };
 
-    let new_event_start = last_event_end_in_today
+    let new_event_start = focused_event
+      .or(last_event_end_in_today)
       .or(nearest_snapping)
       .or(last_event_end)?;
 
@@ -1098,10 +1105,7 @@ fn find_juxtaposed_event(
 
   let t = ev.start + Duration::days(offset as i64);
   let dist = |e: &&Event| e.start.timestamp().abs_diff(t.timestamp());
-  let candidate_ev = match events.iter().min_by_key(dist) {
-    Some(ev) => ev,
-    None => return None,
-  };
+  let candidate_ev = events.iter().min_by_key(dist)?;
 
   // only consider the move successful if it actually moved a day.
   if candidate_ev.id != ev.id
