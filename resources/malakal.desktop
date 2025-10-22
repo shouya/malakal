@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Malakal
+Comment=Minimalistic day planner
+Exec=malakal
+Type=Application
+DesktopNames=malakal

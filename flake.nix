@@ -32,8 +32,12 @@
           buildInputs = xDeps;
           src = ./.;
           postInstall = ''
-          wrapProgram "$out/bin/malakal" \
-            --set LD_LIBRARY_PATH "${lib.makeLibraryPath xDeps}"
+            wrapProgram "$out/bin/malakal" \
+              --set LD_LIBRARY_PATH "${lib.makeLibraryPath xDeps}"
+
+            # Install desktop entry
+            mkdir -p $out/share/applications
+            cp ${./resources/malakal.desktop} $out/share/applications/
           '';
         };
         devShell = with pkgs; mkShell {
