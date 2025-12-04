@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use chrono::{Offset, TimeZone, Utc};
+use eframe::egui::ViewportBuilder;
 
 use crate::config::{Config, APP_NAME};
 
@@ -52,7 +53,15 @@ fn main() -> anyhow::Result<()> {
 
   app.load_events();
 
-  let options = eframe::NativeOptions::default();
+  let viewport = ViewportBuilder {
+    title: Some(APP_NAME.to_owned()),
+    app_id: Some(APP_NAME.to_owned()),
+    ..Default::default()
+  };
+  let options = eframe::NativeOptions {
+    viewport,
+    ..Default::default()
+  };
 
   let eframe_res = eframe::run_native(
     APP_NAME,
