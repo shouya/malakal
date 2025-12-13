@@ -39,12 +39,13 @@ Typical calendar features that are not supported by malakal:
 
 | Keys            | Actions                            |
 |-----------------+------------------------------------|
-| Tab/Shift-Tab   | Focus previous/next event     |
+| Tab/Shift-Tab   | Focus previous/next event          |
 | Arrow keys      | Focus event on the given direction |
 | Ctrl+Arrow keys | Move focused event                 |
 | Shift+Up/Down   | Resize focused event               |
 | n               | Create new event                   |
 | x/Del           | Delete focused event               |
+| .               | Scroll the view to today           |
 
 Arrow keys can be substituted for vim-style navigation keys (hjkl) in all above cases.
 

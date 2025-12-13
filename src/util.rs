@@ -1,6 +1,8 @@
 pub use anyhow::{anyhow, Result};
 
-use chrono::{Datelike, Duration, FixedOffset, Local, Offset, Utc};
+use chrono::{
+  Datelike, Duration, FixedOffset, Local, NaiveTime, Offset, Timelike, Utc,
+};
 
 pub type DateTime = chrono::DateTime<FixedOffset>;
 pub type Date = chrono::NaiveDate;
@@ -16,6 +18,11 @@ pub(crate) fn now(tz: &FixedOffset) -> DateTime {
 
 pub(crate) fn today(tz: &FixedOffset) -> Date {
   now(tz).date_naive()
+}
+
+pub(crate) fn day_progress(time: &NaiveTime) -> f32 {
+  time.signed_duration_since(NaiveTime::MIN).num_seconds() as f32
+    / (Duration::hours(24).num_seconds() as f32)
 }
 
 pub(crate) fn utc_now() -> DateTime {

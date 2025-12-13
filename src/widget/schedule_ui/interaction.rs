@@ -11,7 +11,9 @@ use humantime;
 
 use crate::{
   event::Event,
-  util::{local_now, on_the_same_day, reorder_times, today, DateTime},
+  util::{
+    day_progress, local_now, on_the_same_day, reorder_times, today, DateTime,
+  },
 };
 
 use super::{
@@ -495,6 +497,7 @@ impl ScheduleUi {
     self.handle_keyboard_focus_move(ui);
     self.handle_keyboard_new_event(ui);
     self.handle_keyboard_delete_event(ui);
+    self.handle_keyboard_refocus_now(ui);
   }
 
   fn key_direction_input(
@@ -674,6 +677,26 @@ impl ScheduleUi {
     }
 
     Some(())
+  }
+
+  fn handle_keyboard_refocus_now(&mut self, ui: &Ui) {
+    if InteractingEvent::is_interacting(ui) {
+      return;
+    }
+
+    let period_key_pressed =
+      ui.input_mut(|mem| mem.consume_key(Modifiers::NONE, Key::Period));
+
+    if !period_key_pressed {
+      return;
+    }
+
+    // scroll current date and time to view
+    let today = today(&self.timezone);
+    let now = local_now();
+
+    self.center_to_day(today);
+    self.scroll_to_vertical_position(ui, day_progress(&now.time()));
   }
 
   fn scroll_event_into_view(&mut self, ui: &Ui, event_id: &EventId) {

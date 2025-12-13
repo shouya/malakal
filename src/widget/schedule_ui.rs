@@ -655,6 +655,11 @@ impl ScheduleUi {
     self.calendar = None;
   }
 
+  fn center_to_day(&mut self, date: Date) {
+    self.first_day = date - Duration::days(self.day_count as i64 / 2);
+    self.mark_scope_updated();
+  }
+
   fn handle_context_menu(&mut self, response: &Response) {
     response.context_menu(|ui| {
       if ui.button("Refresh").clicked() {
@@ -673,9 +678,7 @@ impl ScheduleUi {
           self.scroll_horizontally(-1);
         }
         if ui.button("Today").clicked() {
-          self.first_day =
-            today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
-          self.mark_scope_updated();
+          self.center_to_day(today(&self.timezone));
         }
         if ui.button(">").clicked() {
           self.scroll_horizontally(1);
