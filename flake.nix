@@ -4,7 +4,6 @@
     naersk.url = "github:nix-community/naersk/master";
     naersk.inputs.nixpkgs.follows = "nixpkgs";
     utils.url = "github:numtide/flake-utils";
-    utils.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, utils, naersk }:
@@ -16,10 +15,10 @@
           libGL
 
           # x11 lib
-          xorg.libX11
-          xorg.libXrandr
-          xorg.libXcursor
-          xorg.libXi
+          libX11
+          libXrandr
+          libXcursor
+          libXi
 
           # wayland
           wayland
