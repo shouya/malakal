@@ -2,7 +2,7 @@
 name = "malakal"
 description = "a day-planning calendar app based on egui"
 version = "0.1.12"
-edition = "2021"
+edition = "2024"
 license-file = "LICENSE"
 readme = "README.org"
 repository = "https://github.com/shouya/malakal"

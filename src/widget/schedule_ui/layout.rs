@@ -119,7 +119,7 @@ impl LayoutAlgorithm for MarkusAlgorithm {
       for col in 0..=group_width {
         let slot_used = group
           .iter()
-          .filter(|(_, &c)| c == col)
+          .filter(|(_, c)| **c == col)
           .any(|(id, _c)| overlaps(event, ev_map[id]));
 
         if slot_used {
