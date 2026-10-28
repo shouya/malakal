@@ -1,102 +1,115 @@
+use std::{
+  sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
+  thread,
+};
+
 use chrono::Duration;
 use log::warn;
 use notify_rust::Notification;
 use sysinfo::System;
-use timer::Timer;
 
+use crate::Config;
 use crate::backend::Backend;
 use crate::event::Event;
-use crate::util::{self, shared, utc_now, Result, Shared};
-use crate::Config;
+use crate::util::{Result, Shared, utc_now};
+
+// Upcoming events are reloaded at least this often.
+const LOOKAHEAD_HOURS: i64 = 24;
 
 pub struct Notifier {
-  // this guard is only used to bind the lifetime of the guard to a
-  // notifier, not to be read.
-  #[allow(dead_code)]
-  reschedule_guard: timer::Guard,
-  context: Shared<NotifierContext>,
+  events_updated: Sender<()>,
 }
 
-struct NotifierContext {
-  timer: Timer,
-  guards: Vec<timer::Guard>,
+impl Notifier {
+  pub fn start(config: &Config, backend: &Shared<dyn Backend>) -> Self {
+    let (events_updated, rx) = mpsc::channel();
+    let mut alarm = Alarm {
+      switch: config.notifier_switch,
+      blacklist_processes: config.notifier_blacklist_processes.clone(),
+      notification_timeout: config.notification_timeout,
+      backend: backend.clone(),
+      upcoming: vec![],
+      reload_at: utc_now(),
+    };
+    thread::spawn(move || alarm.run(&rx));
+
+    Self { events_updated }
+  }
+
+  pub fn events_updated(&self) {
+    let _ = self.events_updated.send(());
+  }
+}
+
+struct Alarm {
   switch: bool,
   blacklist_processes: Vec<String>,
   notification_timeout: Duration,
-  reschedule_interval: Duration,
   backend: Shared<dyn Backend>,
+
+  // sorted by start time, latest first
+  upcoming: Vec<Event>,
+  reload_at: crate::util::DateTime,
 }
 
-impl NotifierContext {
-  fn new(config: &Config, backend: &Shared<dyn Backend>) -> Result<Self> {
-    Ok(Self {
-      timer: Timer::new(),
-      guards: vec![],
-      switch: config.notifier_switch,
-      blacklist_processes: config.notifier_blacklist_processes.clone(),
-      backend: backend.clone(),
-      notification_timeout: config.notification_timeout,
-      reschedule_interval: Self::reschedule_interval(),
-    })
-  }
+impl Alarm {
+  fn run(&mut self, events_updated: &Receiver<()>) {
+    self.reload();
 
-  // should be const but chrono::from_std is not declared as const
-  fn reschedule_interval() -> Duration {
-    Duration::seconds(3600 * 24)
-  }
-
-  fn start_rescheduler(shared_context: Shared<Self>) -> timer::Guard {
-    let cloned_context = shared_context.clone();
-    let context_locked = shared_context.lock().unwrap();
-    context_locked
-      .timer
-      .schedule_repeating(context_locked.reschedule_interval, move || {
-        Self::reschedule_events(cloned_context.clone())
-      })
-  }
-
-  fn reschedule_events(shared_context: Shared<Self>) {
-    let mut context = shared_context.lock().unwrap();
-    let shared_backend = context.backend.clone();
-    let mut backend = shared_backend.lock().unwrap();
-
-    let now = util::utc_now();
-    let until = now + context.reschedule_interval;
-    let events: Vec<_> = backend
-      .get_events(now, until)
-      .into_iter()
-      .flatten()
-      .collect();
-    drop(backend);
-
-    context.guards.clear();
-    for event in events {
-      if event.start < utc_now() {
-        continue;
+    loop {
+      match events_updated.recv_timeout(self.time_until_wake_up()) {
+        Ok(()) => self.reload(),
+        Err(RecvTimeoutError::Timeout) => self.wake_up(),
+        Err(RecvTimeoutError::Disconnected) => return,
       }
-
-      let notify_at = event.start;
-      let shared_context = shared_context.clone();
-      let guard =
-        context.timer.schedule_with_date(
-          notify_at,
-          move || match Self::notify(shared_context.clone(), event.clone()) {
-            Ok(_) => (),
-            Err(e) => warn!("failed sending notification {e:?}"),
-          },
-        );
-
-      context.guards.push(guard);
     }
   }
 
-  fn notify(context: Shared<Self>, event: Event) -> Result<()> {
-    let context = context.lock().unwrap();
-    if !context.switch {
+  fn time_until_wake_up(&self) -> std::time::Duration {
+    let next_start = self.upcoming.last().map(|event| event.start);
+    let wake_up_at =
+      next_start.map_or(self.reload_at, |t| t.min(self.reload_at));
+    (wake_up_at - utc_now()).to_std().unwrap_or_default()
+  }
+
+  fn wake_up(&mut self) {
+    let now = utc_now();
+    while let Some(event) = self.upcoming.pop_if(|event| event.start <= now) {
+      if let Err(e) = self.notify(&event) {
+        warn!("failed sending notification {e:?}");
+      }
+    }
+
+    if self.reload_at <= now {
+      self.reload();
+    }
+  }
+
+  fn reload(&mut self) {
+    let now = utc_now();
+    let until = now + Duration::hours(LOOKAHEAD_HOURS);
+    let events = self.backend.lock().unwrap().get_events(now, until);
+
+    let mut upcoming = match events {
+      Ok(events) => events,
+      Err(e) => {
+        warn!("failed loading events for notification {e:?}");
+        vec![]
+      }
+    };
+    upcoming.retain(|event| event.start >= now);
+    upcoming.sort_by_key(|event| std::cmp::Reverse(event.start));
+
+    self.upcoming = upcoming;
+    self.reload_at = until;
+  }
+
+  fn notify(&self, event: &Event) -> Result<()> {
+    if !self.switch {
       return Ok(());
     }
 
-    if blacklist_process_running(&context.blacklist_processes) {
+    if blacklist_process_running(&self.blacklist_processes) {
       return Ok(());
     }
 
@@ -104,27 +117,10 @@ impl NotifierContext {
       .summary(&event.title)
       .appname("malakal")
       .auto_icon()
-      .timeout(context.notification_timeout.to_std()?)
+      .timeout(self.notification_timeout.to_std()?)
       .show()?;
 
     Ok(())
-  }
-}
-
-impl Notifier {
-  pub fn start(config: &Config, backend: &Shared<dyn Backend>) -> Result<Self> {
-    let context = shared(NotifierContext::new(config, backend)?);
-    let reschedule_guard = NotifierContext::start_rescheduler(context.clone());
-    let notifier = Self {
-      reschedule_guard,
-      context,
-    };
-    notifier.events_updated();
-    Ok(notifier)
-  }
-
-  pub fn events_updated(&self) {
-    NotifierContext::reschedule_events(self.context.clone());
   }
 }
 

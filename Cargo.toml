@@ -39,7 +39,6 @@ toml = "1.1.8"
 serde = "1.0.229"
 humantime = "2.4.0"
 notify-rust = { version = "4.18.2" }
-timer = "0.2.0"
 sysinfo = "0.39.6"
 serde_with = { version = "3.24.0", features = ["chrono"] }
 dirs = "7.0.0"

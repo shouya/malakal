@@ -18,7 +18,7 @@ use crate::{
 pub struct App {
   scheduler_ui: widget::ScheduleUi,
   backend: Shared<dyn Backend>,
-  notifier: Shared<Notifier>,
+  notifier: Notifier,
   refresh_timer: Option<thread::JoinHandle<()>>,
   hook: HookExecutor,
   last_rect: Option<egui::Rect>,
@@ -81,7 +81,7 @@ impl App {
   ) -> Result<Self> {
     let first_day = today(&timezone) - Duration::days(day_count as i64 / 2);
     let backend: Shared<dyn Backend> = shared(backend);
-    let notifier = shared(Notifier::start(config, &backend)?);
+    let notifier = Notifier::start(config, &backend);
 
     let min_width = config.day_column_width.unwrap_or(260.0);
 
@@ -167,7 +167,7 @@ impl App {
     drop(backend);
 
     if anything_changed {
-      self.notifier.lock().unwrap().events_updated();
+      self.notifier.events_updated();
       self.hook.report_updated();
     }
 

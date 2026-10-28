@@ -1,53 +1,63 @@
 use std::{
   process::Command,
-  sync::{Arc, Mutex},
+  sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
+  thread,
+  time::Duration,
 };
 
-use chrono::Duration;
-use timer::{Guard, Timer};
+use crate::config::Config;
 
-use crate::{config::Config, util::Shared};
-
-#[derive(Clone)]
 pub struct HookExecutor {
-  timer: Arc<Timer>,
-  guard: Shared<Option<Guard>>,
-  command: Option<Vec<String>>,
-  delay: Duration,
+  updated: Sender<()>,
 }
 
 impl HookExecutor {
   pub fn new(config: &Config) -> Self {
-    Self {
-      timer: Arc::new(Timer::new()),
-      guard: Arc::new(Mutex::new(None)),
-      command: config.post_update_hook.clone(),
-      delay: config.post_update_hook_delay,
+    let (updated, rx) = mpsc::channel();
+
+    if let Some(command) = config.post_update_hook.clone() {
+      let delay = config
+        .post_update_hook_delay
+        .to_std()
+        .expect("post_update_hook_delay must not be negative");
+      thread::spawn(move || run_debounced(&rx, delay, &command));
     }
+
+    Self { updated }
   }
 
   pub fn report_updated(&self) {
-    let cmd_and_args = match self.command.as_ref() {
-      None => return,
-      Some(cmd_and_args) => cmd_and_args.clone(),
-    };
+    let _ = self.updated.send(());
+  }
+}
 
-    let mut guard = self.guard.lock().unwrap();
+fn run_debounced(rx: &Receiver<()>, delay: Duration, command: &[String]) {
+  while rx.recv().is_ok() {
+    if !wait_until_quiet(rx, delay) {
+      return;
+    }
+    run_command(command);
+  }
+}
 
-    // cancel previous timer
-    drop(guard.take());
+fn wait_until_quiet(rx: &Receiver<()>, delay: Duration) -> bool {
+  loop {
+    match rx.recv_timeout(delay) {
+      Ok(()) => continue,
+      Err(RecvTimeoutError::Timeout) => return true,
+      Err(RecvTimeoutError::Disconnected) => return false,
+    }
+  }
+}
 
-    let schedule_guard =
-      self.timer.schedule_with_delay(self.delay, move || {
-        let mut iter = cmd_and_args.iter();
-        Command::new(iter.next().expect("Empty command"))
-          .args(iter)
-          .spawn()
-          .expect("failed to spawn")
-          .wait()
-          .expect("failed to wait");
-      });
+fn run_command(command: &[String]) {
+  let Some((program, args)) = command.split_first() else {
+    log::warn!("post_update_hook is empty");
+    return;
+  };
 
-    *guard = Some(schedule_guard)
+  let result = Command::new(program).args(args).status();
+  if let Err(e) = result {
+    log::warn!("failed running post_update_hook: {e:?}");
   }
 }
