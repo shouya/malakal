@@ -1,7 +1,7 @@
 mod interaction;
 mod layout;
 
-use chrono::{Duration, FixedOffset, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, Color32, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2,
@@ -240,15 +240,15 @@ impl ScheduleUi {
   }
 
   fn snap_to_nearest(&self, time: &DateTime) -> DateTime {
-    let timestamp = time.naive_local().timestamp();
+    let timestamp = time.naive_local().and_utc().timestamp();
     let snapped_timestamp = (timestamp as f64
       / self.snapping_duration.num_seconds() as f64)
       .round() as i64
       * self.snapping_duration.num_seconds();
 
-    let new_time =
-      NaiveDateTime::from_timestamp_millis(snapped_timestamp * 1000)
-        .expect("date overflow");
+    let new_time = chrono::DateTime::from_timestamp(snapped_timestamp, 0)
+      .expect("date overflow")
+      .naive_utc();
     new_time
       .and_local_timezone(self.timezone)
       .single()
