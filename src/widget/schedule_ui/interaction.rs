@@ -3,20 +3,19 @@ use std::{collections::HashMap, sync::Arc};
 use bimap::BiMap;
 use chrono::{Duration, Timelike};
 use eframe::egui::{
-  self, text::LayoutJob, CursorIcon, EventFilter, Key, KeyboardShortcut, Label,
-  LayerId, Modifiers, Rect, Response, Sense, Ui,
+  self, CursorIcon, EventFilter, Key, KeyboardShortcut, Label, LayerId,
+  Modifiers, Rect, Response, Sense, Ui, UiBuilder, text::LayoutJob,
 };
-use egui_autocomplete::AutoCompleteTextEdit;
 use humantime;
 
 use crate::{
   event::Event,
-  util::{local_now, on_the_same_day, reorder_times, today, DateTime},
+  util::{DateTime, local_now, on_the_same_day, reorder_times, today},
 };
 
 use super::{
-  layout::Layout, move_event, move_event_end, move_event_start, EventId,
-  ScheduleUi,
+  EventId, ScheduleUi, layout::Layout, move_event, move_event_end,
+  move_event_start,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -100,7 +99,7 @@ struct EventFocusRegistry {
 impl EventFocusRegistry {
   fn with_this<R>(ui: &Ui, f: impl FnOnce(&mut Self) -> R) -> R {
     ui.memory_mut(|mem| {
-      let this: &mut Self = mem.data.get_temp_mut_or_default(ui.id());
+      let this: &mut Self = mem.data.get_temp_mut_or_default(ui.scope_id());
       f(this)
     })
   }
@@ -152,7 +151,7 @@ struct InteractingEvent {
 
 impl InteractingEvent {
   fn id() -> egui::Id {
-    egui::Id::new("interacting_event")
+    egui::Id::unique("interacting_event")
   }
 
   fn get(ui: &Ui) -> Option<Self> {
@@ -161,7 +160,7 @@ impl InteractingEvent {
 
   fn set(ui: &Ui, event: Event, state: FocusedEventState) {
     let value = InteractingEvent { event, state };
-    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), value))
+    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), value));
   }
 
   fn save(self, ui: &Ui) {
@@ -242,7 +241,7 @@ struct DeletedEvent {
 
 impl DeletedEvent {
   fn id() -> egui::Id {
-    egui::Id::new("deleted_event")
+    egui::Id::unique("deleted_event")
   }
 
   fn set(ui: &Ui, event_id: &EventId) {
@@ -383,7 +382,7 @@ impl ScheduleUi {
     rect: Rect,
     set_time: impl FnOnce(DateTime) -> DateTime,
   ) -> Option<bool> {
-    if !ui.memory(|mem| mem.is_anything_being_dragged()) {
+    if !is_drag_ongoing(ui) {
       return Some(true);
     }
 
@@ -405,7 +404,7 @@ impl ScheduleUi {
     rect: Rect,
     set_time: impl FnOnce(DateTime) -> (DateTime, DateTime),
   ) -> Option<bool> {
-    if !ui.memory(|mem| mem.is_anything_being_dragged()) {
+    if !is_drag_ongoing(ui) {
       return Some(true);
     }
 
@@ -537,7 +536,7 @@ impl ScheduleUi {
     let mut event = self.new_event();
     let today = today(&self.timezone);
     let focused_event = ui
-      .memory(|mem| mem.focus())
+      .memory(|mem| mem.focused())
       .and_then(|id| EventFocusRegistry::get_event_id(ui, id))
       .and_then(|id| self.events.iter().find(|x| x.id == id))
       .map(|x| x.end);
@@ -577,7 +576,7 @@ impl ScheduleUi {
       return None;
     }
 
-    let ui_id = ui.memory(|mem| mem.focus())?;
+    let ui_id = ui.memory(|mem| mem.focused())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, ui_id)?;
 
     let del_key_pressed = ui
@@ -598,7 +597,7 @@ impl ScheduleUi {
 
     let dir = self.key_direction_input(ui, Modifiers::NONE)?;
 
-    let ui_id = ui.memory(|mem| mem.focus());
+    let ui_id = ui.memory(|mem| mem.focused());
     let ev_id = ui_id.and_then(|id| EventFocusRegistry::get_event_id(ui, id));
     let events = self.events.as_slice();
 
@@ -625,7 +624,7 @@ impl ScheduleUi {
   fn handle_keyboard_focused_event_move(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let focused_id = ui.memory(|mem| mem.focus())?;
+    let focused_id = ui.memory(|mem| mem.focused())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
     let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
 
@@ -644,7 +643,7 @@ impl ScheduleUi {
   fn handle_keyboard_focused_event_resize(&mut self, ui: &Ui) -> Option<()> {
     use Direction::*;
 
-    let focused_id = ui.memory(|mem| mem.focus())?;
+    let focused_id = ui.memory(|mem| mem.focused())?;
     let ev_id = EventFocusRegistry::get_event_id(ui, focused_id)?;
     let dir = self.key_direction_input(ui, Modifiers::SHIFT)?;
 
@@ -701,7 +700,9 @@ impl ScheduleUi {
   ) -> Response {
     let (layout, clipped) = self.shorten_event_label(ui, rect, &event.title);
 
-    let button = egui::Button::new(layout).sense(Sense::click_and_drag());
+    let button = egui::Button::new(layout)
+      .small()
+      .sense(Sense::click_and_drag());
     let resp = ui.put(rect, button);
     disable_built_in_keyboard_focus_navigation(&resp);
 
@@ -743,11 +744,11 @@ impl ScheduleUi {
 
       if ui.button("Delete").clicked() {
         DeletedEvent::set(ui, &event.id);
-        ui.close_menu();
+        ui.close();
       }
 
       if ui.button("Close menu").clicked() {
-        ui.close_menu();
+        ui.close();
       }
     });
   }
@@ -770,7 +771,7 @@ impl ScheduleUi {
     let job = layout_job(label.into());
 
     // first we attempt to fit the entire label within the button
-    let galley = ui.fonts(|fonts| fonts.layout_job(job));
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
     if galley.rows.len() <= 1 {
       return (galley, false);
     }
@@ -778,7 +779,7 @@ impl ScheduleUi {
     // if that fails, we try to fit the shrunk label with an ellipsis
     for n in (0..(label.len().saturating_sub(3))).rev() {
       let text = format!("{}..", &label[0..n]);
-      let galley = ui.fonts(|fonts| fonts.layout_job(layout_job(text)));
+      let galley = ui.fonts_mut(|fonts| fonts.layout_job(layout_job(text)));
       if galley.rows.len() <= 1 {
         return (galley, true);
       }
@@ -788,7 +789,11 @@ impl ScheduleUi {
     (galley, false)
   }
 
-  fn auto_suggest_event_titles(&self) -> Vec<String> {
+  fn auto_suggest_event_titles(&self, input: &str) -> Vec<String> {
+    if input.trim_ascii().is_empty() {
+      return vec![];
+    }
+
     let mut titles = self
       .events
       .iter()
@@ -796,6 +801,9 @@ impl ScheduleUi {
       .collect::<Vec<_>>();
     titles.sort();
     titles.dedup();
+
+    titles.retain_mut(|t| t.contains(input) && t != input);
+    titles.truncate(5);
     titles
   }
 
@@ -808,23 +816,29 @@ impl ScheduleUi {
     rect: Rect,
     event: &mut Event,
   ) -> Option<bool> {
-    let candidates = self.auto_suggest_event_titles();
-    let editor = AutoCompleteTextEdit::new(&mut event.title, &candidates)
-      .max_suggestions(5)
-      .highlight_matches(true);
+    let text_edit = egui::TextEdit::singleline(&mut event.title);
 
-    // uncomment the following to use pure egui textedit
-    // let editor = egui::TextEdit::singleline(&mut event.title);
+    let popup_id = egui::Id::unique("event_title_completion");
+    let completion_popup =
+      egui::CompletionPopup::new(popup_id).word_boundary(|_| false);
+    let editor = move |ui: &mut egui::Ui| {
+      let out = completion_popup.show(ui, text_edit, |q| {
+        self
+          .auto_suggest_event_titles(q.text)
+          .into_iter()
+          .map(egui::Suggestion::new)
+          .collect()
+      });
+      out.text_edit.response.response
+    };
 
     let resp = ui.put(rect, editor);
 
     // Anything dragging outside the textedit should be equivalent to
     // losing focus. Note: we still need to allow dragging within the
     // textedit widget to allow text selection, etc.
-    let anything_else_dragging = ui
-      .memory(|mem| mem.is_anything_being_dragged())
-      && !resp.dragged()
-      && !resp.drag_released();
+    let anything_else_dragging =
+      ui.dragged_id().is_some() && !resp.dragged() && !resp.drag_stopped();
 
     // We cannot use key_released here, because it will be taken
     // precedence by resp.lost_focus() and commit the change.
@@ -836,19 +850,24 @@ impl ScheduleUi {
       return Some(true);
     }
 
-    resp.request_focus();
+    // request_focus interrupts the IME, which breaks key repeat
+    if !resp.has_focus() {
+      resp.request_focus();
+    }
     disable_built_in_keyboard_focus_navigation(&resp);
     None
   }
 
   fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime) {
-    let layer_id = egui::Id::new("resizer_hint");
+    let layer_id = egui::Id::unique("resizer_hint");
     let layer = LayerId::new(egui::Order::Tooltip, layer_id);
 
     let text = format!("{}", time.format(self.event_resizing_hint_format));
     let label = Label::new(egui::RichText::new(text).monospace());
 
-    ui.with_layer_id(layer, |ui| ui.put(rect, label));
+    let builder = UiBuilder::new().layer_id(layer);
+    let mut child_ui = ui.new_child(builder);
+    child_ui.put(rect, label);
   }
 
   pub(super) fn handle_new_event(
@@ -963,11 +982,11 @@ impl ScheduleUi {
     }
 
     // commit deleted event
-    if let Some(event_id) = DeletedEvent::take(ui) {
-      if let Some(change) = Change::new_removed(&self.events, &event_id) {
-        change.apply(&mut self.events);
-        self.history.save(change);
-      }
+    if let Some(event_id) = DeletedEvent::take(ui)
+      && let Some(change) = Change::new_removed(&self.events, &event_id)
+    {
+      change.apply(&mut self.events);
+      self.history.save(change);
     }
   }
 
@@ -1047,7 +1066,7 @@ fn detect_interaction(response: &Response) -> Option<Interaction> {
     return Some(Clicked);
   }
 
-  if response.drag_released() {
+  if response.drag_stopped() {
     return Some(DragReleased);
   }
 
@@ -1098,10 +1117,7 @@ fn find_juxtaposed_event(
   offset: isize,
   events: &[Event],
 ) -> Option<EventId> {
-  let ev = match events.iter().find(|x| &x.id == event_id) {
-    Some(ev) => ev,
-    None => return None,
-  };
+  let ev = events.iter().find(|x| &x.id == event_id)?;
 
   let t = ev.start + Duration::days(offset as i64);
   let dist = |e: &&Event| e.start.timestamp().abs_diff(t.timestamp());
@@ -1122,10 +1138,7 @@ fn find_adjacent_event(
   offset: isize,
   events: &[Event],
 ) -> Option<EventId> {
-  let i = match events.iter().position(|x| x.id == *event_id) {
-    Some(i) => i,
-    None => return None,
-  };
+  let i = events.iter().position(|x| x.id == *event_id)?;
 
   let new_i = i as isize + offset;
   if new_i < 0 || new_i >= events.len() as isize {
@@ -1133,6 +1146,10 @@ fn find_adjacent_event(
   }
 
   Some(events[new_i as usize].id.clone())
+}
+
+fn is_drag_ongoing(ui: &Ui) -> bool {
+  ui.dragged_id().is_some() || ui.ctx().drag_stopped_id().is_some()
 }
 
 fn disable_built_in_keyboard_focus_navigation(resp: &Response) {

@@ -4,7 +4,7 @@ use anyhow::Context;
 use chrono::{Offset, TimeZone, Utc};
 use eframe::egui::ViewportBuilder;
 
-use crate::config::{Config, APP_NAME};
+use crate::config::{APP_NAME, Config};
 
 mod app;
 mod backend;
@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
     .init();
 
   let config = Config::read_or_initialize()?;
-  log::info!("Config loaded {:?}", &config);
+  log::info!("Config loaded {:?}", config);
 
   let timezone = if let Some(ref tz) = config.timezone {
     chrono_tz::Tz::from_str(tz)
@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
   let eframe_res = eframe::run_native(
     APP_NAME,
     options,
-    Box::new(|ctx| Box::new(app.setup(ctx))),
+    Box::new(|ctx| Ok(Box::new(app.setup(ctx)))),
   );
   match eframe_res {
     Ok(o) => o,

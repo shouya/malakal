@@ -22,7 +22,7 @@ pub struct IndexedLocalDir {
 }
 
 struct ICSFileEntry {
-  size: usize,
+  size: i64,
   modified_at: chrono::DateTime<Utc>,
 }
 
@@ -129,7 +129,7 @@ COMMIT;
     let event_id = &event.id;
     let start = event.start.timestamp();
     let end = &event.end.timestamp();
-    let length = metadata.len() as usize;
+    let length = metadata.len() as i64;
     let modification_date = metadata.modified()?;
     let modification_timestamp = modification_date
       .duration_since(std::time::SystemTime::UNIX_EPOCH)?
@@ -149,7 +149,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       start,
       end,
       length,
-      modification_timestamp
+      modification_timestamp as i64
     ])?;
 
     Ok(())
@@ -177,7 +177,7 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       let file_stem = path.file_stem().unwrap();
       let event_id = file_stem.to_str().unwrap();
       if let Ok(event_entry) = self.get_single_event_entry(&tx, event_id) {
-        let file_size = metadata.len() as usize;
+        let file_size = metadata.len() as i64;
         let mut mod_time: chrono::DateTime<Utc> = metadata
           .modified()
           .expect("modification date not available")

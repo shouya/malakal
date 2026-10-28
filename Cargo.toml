@@ -45,7 +45,6 @@ serde_with = { version = "3.24.0", features = ["chrono"] }
 dirs = "7.0.0"
 filetime = "0.2.29"
 bimap = "0.6.3"
-egui_autocomplete = "15.0.0"
 
 [profile.release]
 lto = true

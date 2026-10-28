@@ -2,7 +2,8 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use chrono::{Duration, FixedOffset};
-use eframe::{egui, CreationContext};
+use eframe::egui::Ui;
+use eframe::{CreationContext, egui};
 
 use crate::config::Config;
 use crate::hook::HookExecutor;
@@ -10,7 +11,7 @@ use crate::util::shared;
 use crate::{
   backend::Backend,
   notifier::Notifier,
-  util::{now, today, Result, Shared},
+  util::{Result, Shared, now, today},
   widget,
 };
 
@@ -26,17 +27,13 @@ pub struct App {
 static SCROLL: AtomicBool = AtomicBool::new(true);
 
 impl eframe::App for App {
-  fn update(
-    &mut self,
-    ctx: &eframe::egui::Context,
-    _frame: &mut eframe::Frame,
-  ) {
+  fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
     self.refresh_events();
     self.load_events();
 
     self.scheduler_ui.update_current_time();
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
       let mut scroll_area = egui::ScrollArea::both();
 
       if SCROLL.fetch_and(false, std::sync::atomic::Ordering::SeqCst) {
@@ -45,6 +42,8 @@ impl eframe::App for App {
       }
 
       scroll_area.show(ui, |ui| {
+        apply_schedule_style(ui.style_mut());
+
         let just_resized = match self.last_rect {
           None => true,
           Some(rect) => rect != ui.max_rect(),
@@ -65,9 +64,11 @@ impl eframe::App for App {
 impl App {
   pub fn setup(mut self, ctx: &CreationContext) -> Self {
     let ctx = ctx.egui_ctx.clone();
-    self.refresh_timer = Some(thread::spawn(move || loop {
-      thread::sleep(std::time::Duration::from_millis(1000));
-      ctx.request_repaint();
+    self.refresh_timer = Some(thread::spawn(move || {
+      loop {
+        thread::sleep(std::time::Duration::from_millis(1000));
+        ctx.request_repaint();
+      }
     }));
     self
   }
@@ -172,4 +173,19 @@ impl App {
 
     Ok(())
   }
+}
+
+fn apply_schedule_style(style: &mut egui::Style) {
+  style.spacing.item_spacing = egui::vec2(3.0, 3.0);
+
+  let widgets = &mut style.visuals.widgets;
+  for visuals in [
+    &mut widgets.noninteractive,
+    &mut widgets.inactive,
+    &mut widgets.active,
+    &mut widgets.open,
+  ] {
+    visuals.corner_radius = egui::CornerRadius::same(2);
+  }
+  widgets.hovered.corner_radius = egui::CornerRadius::same(3);
 }

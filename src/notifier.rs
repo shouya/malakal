@@ -132,7 +132,7 @@ fn blacklist_process_running(blacklist: &[String]) -> bool {
   let system = System::default();
   for process in system.processes().values() {
     let name = process.name();
-    if blacklist.iter().any(|black| black == name) {
+    if blacklist.iter().any(|black| **black == *name) {
       return true;
     }
   }

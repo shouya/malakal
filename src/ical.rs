@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use ical::property::Property;
 
 use crate::event::{Event, EventBuilder};
-use crate::util::{anyhow, Result};
+use crate::util::{Result, anyhow};
 
 pub(crate) struct ICal;
 
@@ -53,7 +53,7 @@ impl ICal {
 
     let value = |p: Property| -> Result<String> {
       p.value
-        .ok_or_else(|| anyhow!("property {} doesn't have value", &p.name))
+        .ok_or_else(|| anyhow!("property {} doesn't have value", p.name))
     };
     let parse_time = |p: Property| -> Result<DateTime<Utc>> {
       let s = value(p.clone())?;
@@ -110,10 +110,10 @@ fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<DateTime<Utc>> {
     return Ok(t.and_utc());
   }
 
-  if let Some(tz) = tzid.and_then(|tz| Tz::from_str(tz).ok()) {
-    if let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%S") {
-      return Ok(t.and_local_timezone(tz).unwrap().with_timezone(&Utc));
-    }
+  if let Some(tz) = tzid.and_then(|tz| Tz::from_str(tz).ok())
+    && let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%S")
+  {
+    return Ok(t.and_local_timezone(tz).unwrap().with_timezone(&Utc));
   }
 
   bail!("failed to parse timestamp {}", s)

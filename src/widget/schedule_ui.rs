@@ -4,7 +4,7 @@ mod layout;
 use chrono::{Duration, FixedOffset, NaiveDateTime, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
-  self, pos2, vec2, Color32, Pos2, Rect, Response, Sense, Ui, Vec2,
+  self, Color32, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2,
 };
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ use self::{
 
 use crate::{
   event::{Event, EventBuilder},
-  util::{now, on_the_same_day, today, Date, DateTime},
+  util::{Date, DateTime, now, on_the_same_day, today},
   widget::CalendarBuilder,
 };
 
@@ -149,9 +149,9 @@ impl ScheduleUi {
         let day = start as usize as f32;
         let y = [(start - day).clamp(0.0, 1.0), (end - day).clamp(0.0, 1.0)];
         let rect = self.layout_event(widget_rect, day as usize, y, rel_x);
-        let margin = ui.style().visuals.clip_rect_margin / 2.0;
+        let margin = ui.style().spacing.item_spacing / 2.0;
 
-        Some(rect.shrink(margin))
+        Some(rect.shrink2(margin))
       }
       _ => unimplemented!(),
     }
@@ -351,7 +351,7 @@ impl ScheduleUi {
   fn draw_time_marks(&self, ui: &mut Ui, rect: Rect) {
     let offset = self.content_offset(rect);
 
-    let visuals = ui.style().visuals.clone();
+    let spacing = ui.style().spacing.item_spacing;
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
 
@@ -366,14 +366,14 @@ impl ScheduleUi {
       time_mark_region.set_width(self.time_marker_margin_width);
 
       alpha = ui.ctx().animate_bool(
-        egui::Id::new("time_mark"),
+        egui::Id::unique("time_mark"),
         !ui.rect_contains_pointer(time_mark_region),
       );
     }
 
     painter.rect_filled(
-      time_mark_region.shrink(visuals.clip_rect_margin),
-      widget_visuals.rounding.ne,
+      time_mark_region.shrink2(spacing),
+      widget_visuals.corner_radius.ne,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
 
@@ -403,7 +403,7 @@ impl ScheduleUi {
   }
 
   fn draw_day_marks(&self, ui: &mut Ui, rect: Rect) {
-    let visuals = ui.style().visuals.clone();
+    let spacing = ui.style().spacing.item_spacing;
     let widget_visuals = ui.style().noninteractive();
     let painter = ui.painter_at(rect);
 
@@ -421,14 +421,14 @@ impl ScheduleUi {
       day_mark_region.set_top(ui.clip_rect().top());
       day_mark_region.set_height(self.day_header_margin_height);
       alpha = ui.ctx().animate_bool(
-        egui::Id::new("day_mark"),
+        egui::Id::unique("day_mark"),
         !ui.rect_contains_pointer(day_mark_region),
       );
     }
 
     painter.rect_filled(
-      day_mark_region.shrink(visuals.clip_rect_margin),
-      widget_visuals.rounding.ne,
+      day_mark_region.shrink2(spacing),
+      widget_visuals.corner_radius.ne,
       widget_visuals.bg_fill.linear_multiply(alpha * 0.8),
     );
 
@@ -528,21 +528,15 @@ impl ScheduleUi {
     naive_time.and_then(|t| t.and_local_timezone(self.timezone).single())
   }
 
-  fn desired_size(&self, ui: &Ui) -> Vec2 {
-    let visuals = ui.style().visuals.clone();
-    let clip_margin = visuals.clip_rect_margin;
-
+  fn desired_size(&self) -> Vec2 {
     // give a bit more vertical space to display the last time mark
     let text_safe_margin = 10.0;
 
     vec2(
-      self.time_marker_margin_width
-        + self.day_width * self.day_count as f32
-        + clip_margin,
+      self.time_marker_margin_width + self.day_width * self.day_count as f32,
       self.day_header_margin_height
         + self.segment_height * self.segment_count as f32
-        + text_safe_margin
-        + clip_margin,
+        + text_safe_margin,
     )
   }
 
@@ -555,7 +549,7 @@ impl ScheduleUi {
     // get response at empty area first (other widgets will steal it)
     let response_on_empty_area = ui.interact(
       ui.max_rect(),
-      ui.id().with("empty_area"),
+      ui.scope_id().with("empty_area"),
       Sense::click_and_drag(),
     );
 
@@ -597,7 +591,7 @@ impl ScheduleUi {
   }
 
   pub(crate) fn show(&mut self, ui: &mut Ui) {
-    let (_id, rect) = ui.allocate_space(self.desired_size(ui));
+    let (_id, rect) = ui.allocate_space(self.desired_size());
 
     if !ui.is_rect_visible(rect) {
       return;
@@ -607,8 +601,10 @@ impl ScheduleUi {
     self.regularize_events();
 
     // draw the event ui
-    let mut child_ui =
-      ui.child_ui(rect, egui::Layout::left_to_right(egui::Align::default()));
+    let child_ui_builder = egui::UiBuilder::new()
+      .layout(egui::Layout::left_to_right(egui::Align::default()))
+      .max_rect(rect);
+    let mut child_ui = ui.new_child(child_ui_builder);
     self.show_ui(&mut child_ui);
 
     // commit any event changes
@@ -661,7 +657,7 @@ impl ScheduleUi {
         self.refresh_requested = true;
         self.mark_scope_updated();
         ui.label("Refreshing events...");
-        ui.close_menu();
+        ui.close();
       }
       ui.separator();
 
@@ -690,7 +686,7 @@ impl ScheduleUi {
       ui.separator();
 
       if ui.button("Close menu").clicked() {
-        ui.close_menu();
+        ui.close();
       }
     });
   }
@@ -837,9 +833,7 @@ impl ScheduleUi {
   }
 
   pub fn refit_into_ui(&mut self, ui: &Ui) {
-    let day_space_width = ui.max_rect().width()
-      - self.time_marker_margin_width
-      - ui.visuals().clip_rect_margin;
+    let day_space_width = ui.max_rect().width() - self.time_marker_margin_width;
 
     let day_count_min = day_space_width / self.day_max_width;
     let day_count_max = day_space_width / self.day_min_width;
