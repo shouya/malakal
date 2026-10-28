@@ -47,6 +47,8 @@
             pre-commit
             rustPackages.clippy
             rust-analyzer
+            cargo-edit
+            bacon
           ] ++ xDeps;
 
           LD_LIBRARY_PATH = lib.makeLibraryPath xDeps;
