@@ -699,7 +699,6 @@ impl ScheduleUi {
     let (layout, clipped) = self.shorten_event_label(ui, rect, &event.title);
 
     let button = egui::Button::new(layout)
-      .small()
       .sense(Sense::click_and_drag());
     let resp = ui.put(rect, button);
     disable_built_in_keyboard_focus_navigation(&resp);
@@ -860,7 +859,9 @@ impl ScheduleUi {
 
     let local = self.to_local(time);
     let text = local.strftime(self.event_resizing_hint_format).to_string();
-    let label = Label::new(egui::RichText::new(text).monospace());
+    let bg = ui.style().visuals.widgets.noninteractive.bg_fill;
+    let rich_text = egui::RichText::new(text).monospace().size(10.0).background_color(bg);
+    let label = Label::new(rich_text);
 
     let builder = UiBuilder::new().layer_id(layer);
     let mut child_ui = ui.new_child(builder);

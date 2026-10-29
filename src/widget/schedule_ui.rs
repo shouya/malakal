@@ -38,7 +38,7 @@ pub struct ScheduleUi {
   day_max_width: f32,
   #[builder(default = "24")]
   segment_count: usize,
-  #[builder(default = "80.0")]
+  #[builder(default = "90.0")]
   segment_height: f32,
   #[builder(default = "80.0")]
   time_marker_margin_width: f32,

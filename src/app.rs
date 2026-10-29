@@ -185,7 +185,7 @@ fn apply_schedule_style(style: &mut egui::Style) {
     &mut widgets.active,
     &mut widgets.open,
   ] {
-    visuals.corner_radius = egui::CornerRadius::same(2);
+    visuals.corner_radius = egui::CornerRadius::same(3);
   }
   widgets.hovered.corner_radius = egui::CornerRadius::same(3);
 }
