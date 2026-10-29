@@ -16,10 +16,7 @@ impl HookExecutor {
     let (updated, rx) = mpsc::channel();
 
     if let Some(command) = config.post_update_hook.clone() {
-      let delay = config
-        .post_update_hook_delay
-        .to_std()
-        .expect("post_update_hook_delay must not be negative");
+      let delay = config.post_update_hook_delay;
       thread::spawn(move || run_debounced(&rx, delay, &command));
     }
 

@@ -1,12 +1,9 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use anyhow::{anyhow, Context};
-use chrono::Duration;
+use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
-use serde_with::{formats::Flexible, serde_as};
 use toml::ser::to_string_pretty;
 
-#[serde_as]
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(default)]
 pub struct Config {
@@ -15,10 +12,10 @@ pub struct Config {
   pub timezone: Option<String>,
   pub notifier_switch: bool,
   pub notifier_blacklist_processes: Vec<String>,
-  #[serde_as(as = "serde_with::DurationMilliSeconds<i64, Flexible>")]
+  #[serde(with = "millis")]
   pub notification_timeout: Duration,
   pub post_update_hook: Option<Vec<String>>,
-  #[serde_as(as = "serde_with::DurationMilliSeconds<i64, Flexible>")]
+  #[serde(with = "millis")]
   pub post_update_hook_delay: Duration,
   pub day_column_width: Option<f32>,
 }
@@ -32,10 +29,10 @@ impl Default for Config {
       calendar_location: format!("~/.calendar/{APP_NAME}"),
       timezone: None,
       notifier_switch: true,
-      notification_timeout: Duration::seconds(5),
+      notification_timeout: Duration::from_secs(5),
       notifier_blacklist_processes: vec![],
       post_update_hook: None,
-      post_update_hook_delay: Duration::seconds(30),
+      post_update_hook_delay: Duration::from_secs(30),
       day_column_width: None,
     }
   }
@@ -85,5 +82,35 @@ impl Config {
     }
 
     Ok(config)
+  }
+}
+
+mod millis {
+  use std::time::Duration;
+
+  use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+  #[derive(Deserialize)]
+  #[serde(untagged)]
+  enum Millis {
+    Number(f64),
+    Text(String),
+  }
+
+  pub fn serialize<S: Serializer>(
+    duration: &Duration,
+    serializer: S,
+  ) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u64(duration.as_millis() as u64)
+  }
+
+  pub fn deserialize<'de, D: Deserializer<'de>>(
+    deserializer: D,
+  ) -> Result<Duration, D::Error> {
+    let millis = match Millis::deserialize(deserializer)? {
+      Millis::Number(millis) => millis,
+      Millis::Text(text) => text.parse().map_err(D::Error::custom)?,
+    };
+    Duration::try_from_secs_f64(millis / 1000.0).map_err(D::Error::custom)
   }
 }

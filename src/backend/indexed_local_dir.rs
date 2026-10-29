@@ -1,11 +1,10 @@
-use chrono::{Timelike, Utc};
-use rusqlite::{params, Connection};
+use jiff::Timestamp;
+use rusqlite::{Connection, params};
 use std::time::Duration;
 use std::{
-  cell::RefCell, fs::create_dir_all, fs::Metadata, path::Path, time::Instant,
+  cell::RefCell, fs::Metadata, fs::create_dir_all, path::Path, time::Instant,
 };
 
-use crate::util::DateTime;
 use crate::{
   backend::Backend,
   event::{Event, EventId},
@@ -23,7 +22,7 @@ pub struct IndexedLocalDir {
 
 struct ICSFileEntry {
   size: i64,
-  modified_at: chrono::DateTime<Utc>,
+  modified_at: Timestamp,
 }
 
 impl IndexedLocalDir {
@@ -72,7 +71,13 @@ LIMIT 1
       .query_row(params![event_id], |row| {
         Ok(ICSFileEntry {
           size: row.get(0)?,
-          modified_at: from_unix_timestamp(row.get(1)?),
+          modified_at: Timestamp::from_second(row.get(1)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+              1,
+              rusqlite::types::Type::Integer,
+              e.into(),
+            )
+          })?,
         })
       })
       .map_err(Into::into)
@@ -127,8 +132,8 @@ COMMIT;
     metadata: &Metadata,
   ) -> Result<()> {
     let event_id = &event.id;
-    let start = event.start.timestamp();
-    let end = &event.end.timestamp();
+    let start = event.start.as_second();
+    let end = event.end.as_second();
     let length = metadata.len() as i64;
     let modification_date = metadata.modified()?;
     let modification_timestamp = modification_date
@@ -178,15 +183,13 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
       let event_id = file_stem.to_str().unwrap();
       if let Ok(event_entry) = self.get_single_event_entry(&tx, event_id) {
         let file_size = metadata.len() as i64;
-        let mut mod_time: chrono::DateTime<Utc> = metadata
-          .modified()
-          .expect("modification date not available")
-          .into();
-
-        // we only care about second-level modification time
-        mod_time = mod_time
-          .with_nanosecond(0)
-          .expect("failed trimming sub-second units");
+        let mod_time = Timestamp::try_from(
+          metadata
+            .modified()
+            .expect("modification date not available"),
+        )?;
+        // the index stores whole seconds
+        let mod_time = Timestamp::from_second(mod_time.as_second())?;
 
         if event_entry.size != file_size || event_entry.modified_at < mod_time {
           log::debug!("Updating existing event {:?}", path);
@@ -239,11 +242,11 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 
   fn all_event_entry_ids_between(
     &self,
-    from: DateTime,
-    to: DateTime,
+    from: Timestamp,
+    to: Timestamp,
   ) -> Result<Vec<EventId>> {
-    let start = from.timestamp();
-    let end = to.timestamp();
+    let start = from.as_second();
+    let end = to.as_second();
 
     let conn = self.conn.borrow();
     let mut stmt = conn.prepare_cached(
@@ -258,7 +261,11 @@ DO UPDATE SET start=?2, end=?3, content_length=?4, modification_date=?5
 }
 
 impl Backend for IndexedLocalDir {
-  fn get_events(&mut self, from: DateTime, to: DateTime) -> Result<Vec<Event>> {
+  fn get_events(
+    &mut self,
+    from: Timestamp,
+    to: Timestamp,
+  ) -> Result<Vec<Event>> {
     self.refresh();
 
     let event_ids = self.all_event_entry_ids_between(from, to)?;
@@ -299,10 +306,4 @@ impl Backend for IndexedLocalDir {
     self.refresh_deleted_files()?;
     Ok(())
   }
-}
-
-fn from_unix_timestamp(i: i64) -> chrono::DateTime<Utc> {
-  use std::time::UNIX_EPOCH;
-  let d = UNIX_EPOCH + Duration::from_secs(i as u64);
-  chrono::DateTime::<Utc>::from(d)
 }

@@ -1,7 +1,4 @@
-use std::str::FromStr;
-
 use anyhow::Context;
-use chrono::{Offset, TimeZone, Utc};
 use eframe::egui::ViewportBuilder;
 
 use crate::config::{APP_NAME, Config};
@@ -26,13 +23,9 @@ fn main() -> anyhow::Result<()> {
   let config = Config::read_or_initialize()?;
   log::info!("Config loaded {:?}", config);
 
-  let timezone = if let Some(ref tz) = config.timezone {
-    chrono_tz::Tz::from_str(tz)
-      .map_err(|x| anyhow::anyhow!("{}", x))?
-      .offset_from_utc_datetime(&Utc::now().naive_utc())
-      .fix()
-  } else {
-    util::local_tz()
+  let timezone = match &config.timezone {
+    Some(name) => jiff::tz::TimeZone::get(name)?,
+    None => jiff::tz::TimeZone::system(),
   };
 
   let local_backend = backend::LocalDirBuilder::default()

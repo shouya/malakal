@@ -1,10 +1,14 @@
 mod interaction;
 mod layout;
 
-use chrono::{Duration, FixedOffset, NaiveTime, Timelike};
 use derive_builder::Builder;
 use eframe::egui::{
   self, Color32, Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2,
+};
+use jiff::{
+  RoundMode, SignedDuration, Timestamp, ToSpan, Unit,
+  civil::{Date, DateTime, DateTimeRound, Time},
+  tz::TimeZone,
 };
 use uuid::Uuid;
 
@@ -15,7 +19,7 @@ use self::{
 
 use crate::{
   event::{Event, EventBuilder},
-  util::{Date, DateTime, now, on_the_same_day, today},
+  util::{on_the_same_day, seconds_since_midnight, today},
   widget::CalendarBuilder,
 };
 
@@ -53,7 +57,7 @@ pub struct ScheduleUi {
   new_event_margin: f32,
 
   // used to render current time indicator
-  current_time: Option<DateTime>,
+  current_time: Option<Timestamp>,
 
   // used to refresh every second
   #[builder(default = "std::time::Instant::now()", setter(skip))]
@@ -64,11 +68,11 @@ pub struct ScheduleUi {
   #[builder(default = "20.0")]
   resizer_width_margin: f32,
 
-  #[builder(default = "Duration::minutes(15)")]
-  min_event_duration: Duration,
+  #[builder(default = "SignedDuration::from_mins(15)")]
+  min_event_duration: SignedDuration,
 
-  #[builder(default = "Duration::minutes(15)")]
-  snapping_duration: Duration,
+  #[builder(default = "SignedDuration::from_mins(15)")]
+  snapping_duration: SignedDuration,
 
   #[builder(default = "\"%H:%M\"")]
   event_resizing_hint_format: &'static str,
@@ -76,7 +80,7 @@ pub struct ScheduleUi {
   #[builder(default = "Color32::LIGHT_BLUE")]
   new_event_color: Color32,
 
-  timezone: FixedOffset,
+  timezone: TimeZone,
 
   new_event_calendar: String,
 
@@ -106,7 +110,7 @@ enum EventLayoutType {
   AllDay([Date; 2]),
 }
 
-const SECS_PER_DAY: u64 = 24 * 3600;
+const SECS_PER_DAY: i64 = 24 * 3600;
 
 impl ScheduleUi {
   // the caller must ensure the events are all within the correct days
@@ -118,15 +122,13 @@ impl ScheduleUi {
       let events: Vec<layout::Ev> = events
         .iter()
         .filter(|&e| !e.deleted)
-        .filter(|&e| self.date_to_day(e.start.date_naive()) == Some(day))
+        .filter(|&e| {
+          self.date_to_day(self.to_local(e.start).date()) == Some(day)
+        })
         .filter(|&e| matches!(self.layout_type(e), EventLayoutType::Single(..)))
         .map(|e| {
-          if e.end - e.start < self.min_event_duration {
-            let end = e.start + self.min_event_duration;
-            (&e.id, e.start.timestamp(), end.timestamp()).into()
-          } else {
-            (&e.id, e.start.timestamp(), e.end.timestamp()).into()
-          }
+          let end = e.end.max(e.start + self.min_event_duration);
+          (&e.id, e.start.as_second(), end.as_second()).into()
         })
         .collect();
 
@@ -187,7 +189,19 @@ impl ScheduleUi {
   // 2. event duration must be at least self.min_event_duration long
   // 3. event date can't be changed
 
-  fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<DateTime> {
+  fn to_local(&self, time: Timestamp) -> DateTime {
+    self.timezone.to_datetime(time)
+  }
+
+  fn to_timestamp(&self, local: DateTime) -> Option<Timestamp> {
+    self
+      .timezone
+      .to_ambiguous_timestamp(local)
+      .compatible()
+      .ok()
+  }
+
+  fn pointer_pos_to_datetime(&self, rel_pos: Pos2) -> Option<Timestamp> {
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -201,17 +215,16 @@ impl ScheduleUi {
     let seconds = SECS_PER_DAY as f32 * vert_pos;
     let seconds = ((seconds / 60.0).round() * 60.0) as i64;
 
-    let date = self.first_day + Duration::days(day);
-    let time = date.and_hms_opt(0, 0, 0).expect("date overflow")
-      + Duration::seconds(seconds);
-
-    time.and_local_timezone(self.timezone).single()
+    let date = self.first_day + day.days();
+    let local =
+      date.to_datetime(Time::midnight()) + SignedDuration::from_secs(seconds);
+    self.to_timestamp(local)
   }
 
   fn pointer_pos_to_datetime_snapping(
     &self,
     rel_pos: Pos2,
-  ) -> Option<DateTime> {
+  ) -> Option<Timestamp> {
     let day = (rel_pos.x / self.day_width) as i64;
     if !(day >= 0 && day < self.day_count as i64) {
       return None;
@@ -225,34 +238,28 @@ impl ScheduleUi {
     }
 
     let seconds = SECS_PER_DAY as f32 * vert_pos;
-    let mut snapped_seconds =
-      (seconds / self.snapping_duration.num_seconds() as f32).floor() as i64
-        * self.snapping_duration.num_seconds();
-
-    if snapped_seconds > SECS_PER_DAY as i64 {
-      snapped_seconds = SECS_PER_DAY as i64;
-    }
-
-    let date = self.first_day + Duration::days(day);
-    let time = date.and_hms_opt(0, 0, 0).expect("date overflow")
-      + Duration::seconds(snapped_seconds);
-    time.and_local_timezone(self.timezone).single()
+    let local = self.first_day.to_datetime(Time::midnight())
+      + day.days()
+      + SignedDuration::from_secs(seconds as i64);
+    let snapped = self.snap(local, RoundMode::Floor);
+    let end_of_day =
+      (self.first_day + (day + 1).days()).to_datetime(Time::midnight());
+    self.to_timestamp(snapped.min(end_of_day))
   }
 
-  fn snap_to_nearest(&self, time: &DateTime) -> DateTime {
-    let timestamp = time.naive_local().and_utc().timestamp();
-    let snapped_timestamp = (timestamp as f64
-      / self.snapping_duration.num_seconds() as f64)
-      .round() as i64
-      * self.snapping_duration.num_seconds();
+  fn snap_to_nearest(&self, time: Timestamp) -> Timestamp {
+    let snapped = self.snap(self.to_local(time), RoundMode::HalfExpand);
+    self.to_timestamp(snapped).expect("date overflow")
+  }
 
-    let new_time = chrono::DateTime::from_timestamp(snapped_timestamp, 0)
-      .expect("date overflow")
-      .naive_utc();
-    new_time
-      .and_local_timezone(self.timezone)
-      .single()
-      .expect("timezone conversion error")
+  fn snap(&self, local: DateTime, mode: RoundMode) -> DateTime {
+    let rounding = DateTimeRound::new()
+      .smallest(Unit::Minute)
+      .increment(self.snapping_duration.as_mins())
+      .mode(mode);
+    local
+      .round(rounding)
+      .expect("snapping_duration must divide an hour")
   }
 
   fn event_resizer_regions(&self, rect: Rect) -> [Rect; 2] {
@@ -276,8 +283,8 @@ impl ScheduleUi {
   }
 
   fn date_to_day(&self, date: Date) -> Option<usize> {
-    let diff_days = (date - self.first_day).num_days();
-    if diff_days < 0 || diff_days >= self.day_count as i64 {
+    let diff_days = (date - self.first_day).get_days();
+    if diff_days < 0 || diff_days as usize >= self.day_count {
       return None;
     }
 
@@ -316,7 +323,7 @@ impl ScheduleUi {
   }
 
   fn scroll_horizontally(&mut self, days: i64) {
-    self.first_day += Duration::days(days);
+    self.first_day += days.days();
     self.mark_scope_updated();
   }
 
@@ -325,7 +332,7 @@ impl ScheduleUi {
     let painter = ui.painter_at(rect);
     let offset = self.content_offset(rect);
 
-    if let Some(now) = self.current_time.as_ref() {
+    if let Some(now) = self.current_time {
       let y = self.day_progress(now) * self.content_height();
       let x0 = 0.0;
       let x1 = rect.width();
@@ -409,7 +416,7 @@ impl ScheduleUi {
 
     let today_index = self
       .current_time
-      .map(|t| (t.date_naive() - self.first_day).num_days());
+      .map(|t| (self.to_local(t).date() - self.first_day).get_days() as i64);
 
     let mut day_mark_region =
       self.day_mark_region().translate(rect.left_top().to_vec2());
@@ -492,10 +499,8 @@ impl ScheduleUi {
       return None;
     }
 
-    let day = self.first_day + Duration::days(nth_day as i64);
-    let formatted_day = day.format(self.day_header_format);
-
-    Some(format!("{formatted_day}"))
+    let day = self.first_day + (nth_day as i64).days();
+    Some(day.strftime(self.day_header_format).to_string())
   }
 
   fn time_marker_text(&self, segment: usize) -> Option<String> {
@@ -503,29 +508,17 @@ impl ScheduleUi {
       return None;
     }
 
-    let time = self.time_marker_time(segment, 0).unwrap();
-    let formatted_time = time.format(self.time_marker_format);
-
-    Some(format!("{formatted_time}"))
+    let time = self.time_marker_time(segment, 0)?;
+    Some(time.strftime(self.time_marker_format).to_string())
   }
 
   fn time_marker_time(&self, segment: usize, day: usize) -> Option<DateTime> {
     if segment > self.segment_count {
       return None;
     }
-    let day = self.first_day + Duration::days(day as i64);
-    let seconds = SECS_PER_DAY as usize / self.segment_count * segment;
-
-    let naive_time = if seconds >= SECS_PER_DAY as usize {
-      (day + Duration::days(1)).and_hms_opt(0, 0, 0)
-    } else {
-      let offset =
-        NaiveTime::from_num_seconds_from_midnight_opt(seconds as u32, 0)
-          .expect("seconds overflow");
-      Some(day.and_time(offset))
-    };
-
-    naive_time.and_then(|t| t.and_local_timezone(self.timezone).single())
+    let day = self.first_day + (day as i64).days();
+    let seconds = SECS_PER_DAY / self.segment_count as i64 * segment as i64;
+    Some(day.to_datetime(Time::midnight()) + SignedDuration::from_secs(seconds))
   }
 
   fn desired_size(&self) -> Vec2 {
@@ -612,26 +605,24 @@ impl ScheduleUi {
     remove_empty_events(&mut self.events);
   }
 
-  pub fn time_range(&self) -> (DateTime, DateTime) {
-    let start = self
-      .first_day
-      .and_hms_opt(0, 0, 0)
-      .expect("date overflow")
-      .and_local_timezone(self.timezone)
-      .single()
-      .expect("date overflow");
-    let end = start + chrono::Duration::days(self.day_count as i64);
+  pub fn time_range(&self) -> (Timestamp, Timestamp) {
+    let last_day = self.first_day + (self.day_count as i64).days();
+    let start = self.to_timestamp(self.first_day.to_datetime(Time::midnight()));
+    let end = self.to_timestamp(last_day.to_datetime(Time::midnight()));
 
-    (start, end)
+    (start.expect("date overflow"), end.expect("date overflow"))
   }
 
   pub fn visible_dates(&self) -> Vec<Date> {
-    self.first_day.iter_days().take(self.day_count).collect()
+    self
+      .first_day
+      .series(1.day())
+      .take(self.day_count)
+      .collect()
   }
 
-  pub fn is_visible(&self, time: &DateTime) -> bool {
-    let day = time.naive_local().date() - self.first_day;
-    day.num_days() >= 0 && day.num_days() < self.day_count as i64
+  pub fn is_visible(&self, time: Timestamp) -> bool {
+    self.date_to_day(self.to_local(time).date()).is_some()
   }
 
   pub fn load_events(&mut self, events: Vec<Event>) {
@@ -670,7 +661,7 @@ impl ScheduleUi {
         }
         if ui.button("Today").clicked() {
           self.first_day =
-            today(&self.timezone) - Duration::days(self.day_count as i64 / 2);
+            today(&self.timezone) - (self.day_count as i64 / 2).days();
           self.mark_scope_updated();
         }
         if ui.button(">").clicked() {
@@ -695,11 +686,11 @@ impl ScheduleUi {
     use super::CalendarAction::*;
 
     let visible_dates = self.visible_dates();
-    let default_date = self.current_time.map(|x| x.date_naive());
+    let default_date = self.current_time.map(|t| self.to_local(t).date());
 
     let calendar = self.calendar.get_or_insert_with(|| {
       CalendarBuilder::default()
-        .date(self.first_day + Duration::days(self.day_count as i64 / 2))
+        .date(self.first_day + (self.day_count as i64 / 2).days())
         .current_date(default_date)
         .weekday_offset(1)
         .highlight_dates(visible_dates)
@@ -710,7 +701,7 @@ impl ScheduleUi {
     match calendar.show_ui(ui) {
       None => (),
       Some(DateClicked(date)) => {
-        self.first_day = date - Duration::days(self.day_count as i64 / 2);
+        self.first_day = date - (self.day_count as i64 / 2).days();
         self.mark_scope_updated();
       }
     }
@@ -719,11 +710,8 @@ impl ScheduleUi {
   fn new_event(&self) -> Event {
     let color = egui::Rgba::from(self.new_event_color);
     let start = self
-      .first_day
-      .and_time(Default::default())
-      .and_local_timezone(self.timezone)
-      .single()
-      .expect("timezone conversion error");
+      .to_timestamp(self.first_day.to_datetime(Time::midnight()))
+      .expect("date overflow");
     let end = start + self.min_event_duration;
     let mut event = EventBuilder::default()
       .id(new_event_id())
@@ -732,19 +720,15 @@ impl ScheduleUi {
       .description(None)
       .start(start)
       .end(end)
-      .timestamp(now(&self.timezone))
-      .created_at(now(&self.timezone))
-      .modified_at(now(&self.timezone))
+      .timestamp(Timestamp::now())
+      .created_at(Timestamp::now())
+      .modified_at(Timestamp::now())
       .color([color.r(), color.g(), color.b()])
       .build()
       .unwrap();
 
     event.mark_changed();
     event
-  }
-
-  fn normalize_time(&self, time: &DateTime) -> DateTime {
-    time.with_timezone(&self.timezone)
   }
 
   fn clone_to_new_event(&self, event: &Event) -> Event {
@@ -754,7 +738,7 @@ impl ScheduleUi {
     new_event
   }
 
-  fn pointer_to_datetime_auto(&self, ui: &Ui, pos: Pos2) -> Option<DateTime> {
+  fn pointer_to_datetime_auto(&self, ui: &Ui, pos: Pos2) -> Option<Timestamp> {
     if ui.input(|input| input.modifiers.shift_only()) {
       // no snapping when shift is held down
       self.pointer_pos_to_datetime(pos)
@@ -778,28 +762,27 @@ impl ScheduleUi {
     remove_empty_events(&mut self.events);
 
     for event in self.events.iter_mut() {
-      event.set_timezone(&self.timezone);
-
-      if event.end - event.start < self.min_event_duration {
+      if event.start.duration_until(event.end) < self.min_event_duration {
         move_event_end(
           event,
           event.end + self.min_event_duration,
           self.min_event_duration,
+          &self.timezone,
         );
       }
     }
   }
 
-  pub fn scroll_position(&self, time: &DateTime) -> f32 {
+  pub fn scroll_position(&self, time: Timestamp) -> f32 {
     self.date_time_to_pos(time).y
   }
 
   pub fn scroll_position_for_now(&self) -> f32 {
-    self.scroll_position(&now(&self.timezone))
+    self.scroll_position(Timestamp::now())
   }
 
-  fn date_time_to_pos(&self, time: &DateTime) -> Pos2 {
-    let x = (time.date_naive() - self.first_day).num_days() as f32
+  fn date_time_to_pos(&self, time: Timestamp) -> Pos2 {
+    let x = (self.to_local(time).date() - self.first_day).get_days() as f32
       / self.day_width
       + self.time_marker_margin_width;
     let y = self.day_progress(time) * self.content_height()
@@ -807,29 +790,28 @@ impl ScheduleUi {
     pos2(x, y)
   }
 
-  fn day_progress(&self, datetime: &DateTime) -> f32 {
-    let datetime = self.normalize_time(datetime);
-    let seconds_past_midnight = datetime.num_seconds_from_midnight();
-    (seconds_past_midnight as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
+  fn day_progress(&self, time: Timestamp) -> f32 {
+    let seconds = seconds_since_midnight(self.to_local(time));
+    (seconds as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
   }
 
-  fn to_normalized_time(&self, time: &DateTime) -> f32 {
-    let integer_part =
-      (time.naive_local().date() - self.first_day).num_days() as f32;
-    let fraction_part = time.naive_local().num_seconds_from_midnight() as f32
-      / SECS_PER_DAY as f32;
+  fn to_normalized_time(&self, time: Timestamp) -> f32 {
+    let local = self.to_local(time);
+    let integer_part = (local.date() - self.first_day).get_days() as f32;
+    let fraction_part =
+      seconds_since_midnight(local) as f32 / SECS_PER_DAY as f32;
 
     integer_part + fraction_part
   }
 
   fn layout_type(&self, event: &Event) -> EventLayoutType {
-    let start = self.to_normalized_time(&event.start);
-    let end = self.to_normalized_time(&event.end);
+    let start = self.to_normalized_time(event.start);
+    let end = self.to_normalized_time(event.end);
     EventLayoutType::Single(start, end)
   }
 
   pub fn update_current_time(&mut self) {
-    self.current_time = Some(now(&self.timezone));
+    self.current_time = Some(Timestamp::now());
   }
 
   pub fn refit_into_ui(&mut self, ui: &Ui) {
@@ -903,14 +885,15 @@ fn combine_events(
 
 fn move_event_end(
   event: &mut Event,
-  new_end: DateTime,
-  min_event_duration: Duration,
+  new_end: Timestamp,
+  min_event_duration: SignedDuration,
+  tz: &TimeZone,
 ) {
   if new_end < event.start + min_event_duration {
     return;
   }
 
-  if !on_the_same_day(event.start, new_end) {
+  if !on_the_same_day(event.start, new_end, tz) {
     return;
   }
 
@@ -922,14 +905,15 @@ fn move_event_end(
 
 fn move_event_start(
   event: &mut Event,
-  new_start: DateTime,
-  min_event_duration: Duration,
+  new_start: Timestamp,
+  min_event_duration: SignedDuration,
+  tz: &TimeZone,
 ) {
   if event.end < new_start + min_event_duration {
     return;
   }
 
-  if !on_the_same_day(new_start, event.end) {
+  if !on_the_same_day(new_start, event.end, tz) {
     return;
   }
 
@@ -939,11 +923,10 @@ fn move_event_start(
   }
 }
 
-fn move_event(event: &mut Event, new_start: DateTime) {
-  let duration = event.end - event.start;
-  let new_end = new_start + duration;
+fn move_event(event: &mut Event, new_start: Timestamp, tz: &TimeZone) {
+  let new_end = new_start + event.start.duration_until(event.end);
 
-  if !on_the_same_day(new_start, new_end) {
+  if !on_the_same_day(new_start, new_end, tz) {
     return;
   }
 

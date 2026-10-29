@@ -1,9 +1,6 @@
-use chrono::{Datelike, Duration};
 use derive_builder::Builder;
-
 use eframe::egui::{self, Rect, RichText, Ui};
-
-use crate::util::{beginning_of_month, end_of_month, Date};
+use jiff::{ToSpan, civil::Date};
 
 #[derive(Builder, Clone, Debug, PartialEq)]
 pub struct Calendar {
@@ -59,13 +56,13 @@ impl Calendar {
   fn draw_month_header(&mut self, ui: &mut Ui) {
     ui.horizontal(|ui| {
       if ui.button("<<").clicked() {
-        self.date = month_offset(self.date, -1);
+        self.date -= 1.month();
       }
 
-      ui.label(format!("{}", self.date.format("%Y-%m")));
+      ui.label(self.date.strftime("%Y-%m").to_string());
 
       if ui.button(">>").clicked() {
-        self.date = month_offset(self.date, 1);
+        self.date += 1.month();
       }
     });
   }
@@ -87,8 +84,8 @@ impl Calendar {
   fn draw_days(&self, ui: &mut Ui) -> Option<CalendarAction> {
     let mut action = None;
 
-    let bom = beginning_of_month(self.date);
-    let eom = end_of_month(self.date);
+    let bom = self.date.first_of_month();
+    let eom = self.date.last_of_month();
 
     let days_form_previous_month = self.calc_weekday_location(bom);
     let days_from_next_month =
@@ -96,9 +93,9 @@ impl Calendar {
 
     let total_days = days_form_previous_month
       + days_from_next_month
-      + (eom - bom).num_days() as usize;
+      + (eom - bom).get_days() as usize;
 
-    let mut date = bom - Duration::days(days_form_previous_month as i64);
+    let mut date = bom - (days_form_previous_month as i64).days();
 
     // draw days of the previous month
     for i in 0..total_days {
@@ -109,7 +106,7 @@ impl Calendar {
         ui.end_row();
       }
 
-      date += Duration::days(1);
+      date += 1.day();
     }
 
     action
@@ -139,7 +136,7 @@ impl Calendar {
   }
 
   fn calc_weekday_location(&self, date: Date) -> usize {
-    let weekday = date.weekday().num_days_from_sunday() as usize;
+    let weekday = date.weekday().to_sunday_zero_offset() as usize;
     // avoid overflow
     (Self::DAYS_PER_WEEK + weekday - self.weekday_offset) % Self::DAYS_PER_WEEK
   }
@@ -147,18 +144,4 @@ impl Calendar {
 
 fn same_month(d1: Date, d2: Date) -> bool {
   d1.year() == d2.year() && d1.month() == d2.month()
-}
-
-fn month_offset(date: Date, num_months: i32) -> Date {
-  if num_months == 0 {
-    return date;
-  }
-
-  if num_months > 0 {
-    let date = end_of_month(date) + Duration::days(1);
-    month_offset(date, num_months - 1)
-  } else {
-    let date = beginning_of_month(date) - Duration::days(1);
-    month_offset(date, num_months + 1)
-  }
 }

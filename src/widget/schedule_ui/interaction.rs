@@ -1,16 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
 use bimap::BiMap;
-use chrono::{Duration, Timelike};
 use eframe::egui::{
   self, CursorIcon, EventFilter, Key, KeyboardShortcut, Label, LayerId,
   Modifiers, Rect, Response, Sense, Ui, UiBuilder, text::LayoutJob,
 };
-use humantime;
+use jiff::{Timestamp, tz::TimeZone};
 
 use crate::{
   event::Event,
-  util::{DateTime, local_now, on_the_same_day, reorder_times, today},
+  util::{
+    add_days, on_the_same_day, reorder_times, seconds_since_midnight, today,
+  },
 };
 
 use super::{
@@ -354,19 +355,24 @@ impl ScheduleUi {
     let commit = match state {
       FocusedEventState::DraggingEventStart => {
         self.handle_event_resizing(ui, upper, |time| {
-          move_event_start(event, time, self.min_event_duration);
+          move_event_start(
+            event,
+            time,
+            self.min_event_duration,
+            &self.timezone,
+          );
           event.start
         })
       }
       FocusedEventState::DraggingEventEnd => {
         self.handle_event_resizing(ui, lower, |time| {
-          move_event_end(event, time, self.min_event_duration);
+          move_event_end(event, time, self.min_event_duration, &self.timezone);
           event.end
         })
       }
       FocusedEventState::Dragging => {
         self.handle_event_dragging(ui, event_rect, |time| {
-          move_event(event, time);
+          move_event(event, time, &self.timezone);
           (event.start, event.end)
         })
       }
@@ -380,7 +386,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    set_time: impl FnOnce(DateTime) -> DateTime,
+    set_time: impl FnOnce(Timestamp) -> Timestamp,
   ) -> Option<bool> {
     if !is_drag_ongoing(ui) {
       return Some(true);
@@ -402,7 +408,7 @@ impl ScheduleUi {
     &self,
     ui: &mut Ui,
     rect: Rect,
-    set_time: impl FnOnce(DateTime) -> (DateTime, DateTime),
+    set_time: impl FnOnce(Timestamp) -> (Timestamp, Timestamp),
   ) -> Option<bool> {
     if !is_drag_ongoing(ui) {
       return Some(true);
@@ -541,19 +547,22 @@ impl ScheduleUi {
       .and_then(|id| self.events.iter().find(|x| x.id == id))
       .map(|x| x.end);
 
+    let ends_in_today = |end: &Timestamp| {
+      let local = self.to_local(*end);
+      local.date() == today && seconds_since_midnight(local) > 0
+    };
     let last_event_end_in_today = self
       .events
       .iter()
-      .filter(|x| x.end.date_naive() == today)
-      .filter(|x| x.end.num_seconds_from_midnight() > 0)
-      .max_by_key(|x| x.end)
-      .map(|x| x.end);
+      .map(|x| x.end)
+      .filter(ends_in_today)
+      .max();
 
     let last_event_end =
       self.events.iter().max_by_key(|x| x.end).map(|x| x.end);
     let nearest_snapping = {
-      let t = self.snap_to_nearest(&local_now());
-      self.is_visible(&t).then_some(t)
+      let t = self.snap_to_nearest(Timestamp::now());
+      self.is_visible(t).then_some(t)
     };
 
     let new_event_start = focused_event
@@ -561,8 +570,8 @@ impl ScheduleUi {
       .or(nearest_snapping)
       .or(last_event_end)?;
 
-    move_event(&mut event, new_event_start);
-    let position = event.start_position_of_day();
+    move_event(&mut event, new_event_start, &self.timezone);
+    let position = event.start_position_of_day(&self.timezone);
 
     InteractingEvent::set(ui, event, FocusedEventState::Editing);
 
@@ -603,8 +612,10 @@ impl ScheduleUi {
 
     // focus the first event when there is no event
     let new_focus = match (ev_id, dir) {
-      (None, _) => find_nearest_event(events, &self.current_time?),
-      (Some(ev_id), dir) => find_next_focus(&ev_id, dir, events),
+      (None, _) => find_nearest_event(events, self.current_time?),
+      (Some(ev_id), dir) => {
+        find_next_focus(&ev_id, dir, events, &self.timezone)
+      }
     };
 
     if let Some(new_ev_id) = new_focus {
@@ -629,12 +640,13 @@ impl ScheduleUi {
     let dir = self.key_direction_input(ui, Modifiers::CTRL)?;
 
     let event = self.events.iter_mut().find(|x| x.id == ev_id)?;
+    let tz = &self.timezone;
 
     match dir {
-      Left => super::move_event(event, event.start + Duration::days(-1)),
-      Right => super::move_event(event, event.start + Duration::days(1)),
-      Up => super::move_event(event, event.start - self.min_event_duration),
-      Down => super::move_event(event, event.start + self.min_event_duration),
+      Left => move_event(event, add_days(event.start, -1, tz), tz),
+      Right => move_event(event, add_days(event.start, 1, tz), tz),
+      Up => move_event(event, event.start - self.min_event_duration, tz),
+      Down => move_event(event, event.start + self.min_event_duration, tz),
     }
 
     Some(())
@@ -648,28 +660,14 @@ impl ScheduleUi {
     let dir = self.key_direction_input(ui, Modifiers::SHIFT)?;
 
     let event = self.events.iter_mut().find(|x| x.id == ev_id)?;
+    let tz = &self.timezone;
+    let min = self.min_event_duration;
 
     match dir {
-      Left => super::move_event_end(
-        event,
-        event.end + Duration::days(-1),
-        self.min_event_duration,
-      ),
-      Right => super::move_event_end(
-        event,
-        event.end + Duration::days(1),
-        self.min_event_duration,
-      ),
-      Up => super::move_event_end(
-        event,
-        event.end - self.min_event_duration,
-        self.min_event_duration,
-      ),
-      Down => super::move_event_end(
-        event,
-        event.end + self.min_event_duration,
-        self.min_event_duration,
-      ),
+      Left => move_event_end(event, add_days(event.end, -1, tz), min, tz),
+      Right => move_event_end(event, add_days(event.end, 1, tz), min, tz),
+      Up => move_event_end(event, event.end - min, min, tz),
+      Down => move_event_end(event, event.end + min, min, tz),
     }
 
     Some(())
@@ -711,17 +709,18 @@ impl ScheduleUi {
       resp.clone().on_hover_text(event.title.clone());
     }
 
-    Self::event_context_menu(event, &resp);
+    self.event_context_menu(event, &resp);
 
     resp
   }
 
-  fn event_context_menu(event: &Event, resp: &Response) {
-    let format_time = |time: DateTime| {
-      if time.second() == 0 {
-        time.format("%H:%M")
+  fn event_context_menu(&self, event: &Event, resp: &Response) {
+    let format_time = |time: Timestamp| {
+      let local = self.to_local(time);
+      if local.second() == 0 {
+        local.strftime("%H:%M").to_string()
       } else {
-        time.format("%H:%M:%S")
+        local.strftime("%H:%M:%S").to_string()
       }
     };
 
@@ -731,13 +730,10 @@ impl ScheduleUi {
       }
 
       ui.label(format!(
-        "{}--{} ({})",
+        "{}--{} ({:#})",
         format_time(event.start),
         format_time(event.end),
-        (event.end - event.start)
-          .to_std()
-          .map(|d| humantime::format_duration(d).to_string())
-          .unwrap_or_else(|_| "negative duration".to_string())
+        event.start.duration_until(event.end)
       ));
 
       ui.separator();
@@ -858,11 +854,12 @@ impl ScheduleUi {
     None
   }
 
-  fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: DateTime) {
+  fn show_resizer_hint(&self, ui: &mut Ui, rect: Rect, time: Timestamp) {
     let layer_id = egui::Id::unique("resizer_hint");
     let layer = LayerId::new(egui::Order::Tooltip, layer_id);
 
-    let text = format!("{}", time.format(self.event_resizing_hint_format));
+    let local = self.to_local(time);
+    let text = local.strftime(self.event_resizing_hint_format).to_string();
     let label = Label::new(egui::RichText::new(text).monospace());
 
     let builder = UiBuilder::new().layer_id(layer);
@@ -931,7 +928,7 @@ impl ScheduleUi {
   fn assign_new_event_dates(
     &self,
     ui: &Ui,
-    init_time: DateTime,
+    init_time: Timestamp,
     event: &mut Event,
   ) -> Option<FocusedEventState> {
     use FocusedEventState::{DraggingEventEnd, DraggingEventStart};
@@ -944,8 +941,8 @@ impl ScheduleUi {
 
     // the event crossed the day boundary, we need to pick a direction
     // based on the initial drag position
-    if !on_the_same_day(start, end) {
-      if self.day_progress(&init_time) < 0.5 {
+    if !on_the_same_day(start, end, &self.timezone) {
+      if self.day_progress(init_time) < 0.5 {
         start = init_time;
         end = init_time + self.min_event_duration;
       } else {
@@ -1008,12 +1005,12 @@ impl ScheduleUi {
   }
 }
 
-fn find_nearest_event(events: &[Event], now: &DateTime) -> Option<EventId> {
-  let now_ts = now.timestamp();
+fn find_nearest_event(events: &[Event], now: Timestamp) -> Option<EventId> {
+  let now_ts = now.as_second();
 
   events
     .iter()
-    .min_by_key(|e| e.start.timestamp().abs_diff(now_ts))
+    .min_by_key(|e| e.start.as_second().abs_diff(now_ts))
     .map(|x| x.id.clone())
 }
 
@@ -1101,12 +1098,13 @@ fn find_next_focus(
   event_id: &EventId,
   dir: Direction,
   events: &[Event],
+  tz: &TimeZone,
 ) -> Option<EventId> {
   use Direction::*;
 
   match dir {
-    Left => find_juxtaposed_event(event_id, -1, events),
-    Right => find_juxtaposed_event(event_id, 1, events),
+    Left => find_juxtaposed_event(event_id, -1, events, tz),
+    Right => find_juxtaposed_event(event_id, 1, events, tz),
     Up => find_adjacent_event(event_id, -1, events),
     Down => find_adjacent_event(event_id, 1, events),
   }
@@ -1116,17 +1114,17 @@ fn find_juxtaposed_event(
   event_id: &EventId,
   offset: isize,
   events: &[Event],
+  tz: &TimeZone,
 ) -> Option<EventId> {
   let ev = events.iter().find(|x| &x.id == event_id)?;
 
-  let t = ev.start + Duration::days(offset as i64);
-  let dist = |e: &&Event| e.start.timestamp().abs_diff(t.timestamp());
+  let t = add_days(ev.start, offset as i64, tz);
+  let dist = |e: &&Event| e.start.as_second().abs_diff(t.as_second());
   let candidate_ev = events.iter().min_by_key(dist)?;
 
   // only consider the move successful if it actually moved a day.
-  if candidate_ev.id != ev.id
-    && candidate_ev.start.date_naive() != ev.start.date_naive()
-  {
+  let start_date = |e: &Event| tz.to_datetime(e.start).date();
+  if candidate_ev.id != ev.id && start_date(candidate_ev) != start_date(ev) {
     return Some(candidate_ev.id.clone());
   }
 

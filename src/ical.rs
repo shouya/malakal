@@ -1,6 +1,6 @@
 use anyhow::{bail, ensure};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use ical::property::Property;
+use jiff::{SignedDuration, Timestamp, civil::DateTime, tz::TimeZone};
 
 use crate::event::{Event, EventBuilder};
 use crate::util::{Result, anyhow};
@@ -55,7 +55,7 @@ impl ICal {
       p.value
         .ok_or_else(|| anyhow!("property {} doesn't have value", p.name))
     };
-    let parse_time = |p: Property| -> Result<DateTime<Utc>> {
+    let parse_time = |p: Property| -> Result<Timestamp> {
       let s = value(p.clone())?;
       let tzid = p.params.and_then(|params| {
         params.into_iter().find_map(|(n, v)| {
@@ -85,7 +85,7 @@ impl ICal {
           let value = value(p)?;
           let start =
             start.ok_or_else(|| anyhow!("duration: start not defined yet"))?;
-          let end = start + parse_duration(&value)?;
+          let end = start + value.parse::<SignedDuration>()?;
           event.end(end)
         }
         "CREATED" => event.created_at(parse_time(p)?),
@@ -98,42 +98,20 @@ impl ICal {
   }
 }
 
-fn to_timestamp<Tz: chrono::TimeZone>(time: DateTime<Tz>) -> String {
-  time.naive_utc().format("%Y%m%dT%H%M%SZ").to_string()
+fn to_timestamp(time: Timestamp) -> String {
+  time.strftime("%Y%m%dT%H%M%SZ").to_string()
 }
 
-fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<DateTime<Utc>> {
-  use chrono_tz::Tz;
-  use std::str::FromStr;
-
-  if let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%SZ") {
-    return Ok(t.and_utc());
+fn from_timestamp(s: &str, tzid: Option<&str>) -> Result<Timestamp> {
+  if let Ok(t) = DateTime::strptime("%Y%m%dT%H%M%SZ", s) {
+    return Ok(TimeZone::UTC.to_ambiguous_timestamp(t).compatible()?);
   }
 
-  if let Some(tz) = tzid.and_then(|tz| Tz::from_str(tz).ok())
-    && let Ok(t) = NaiveDateTime::parse_from_str(s, "%Y%m%dT%H%M%S")
+  if let Some(tz) = tzid.and_then(|tz| TimeZone::get(tz).ok())
+    && let Ok(t) = DateTime::strptime("%Y%m%dT%H%M%S", s)
   {
-    return Ok(t.and_local_timezone(tz).unwrap().with_timezone(&Utc));
+    return Ok(tz.to_ambiguous_timestamp(t).compatible()?);
   }
 
   bail!("failed to parse timestamp {}", s)
-}
-
-fn parse_duration(s: &str) -> Result<Duration> {
-  let reg = regex::Regex::new(r"PT((?P<h>\d+)H)?((?P<m>\d+)M)?")?;
-  let cap = reg
-    .captures(s)
-    .ok_or_else(|| anyhow!("Invalid duration parsed {}", s))?;
-
-  let mut dur = Duration::zero();
-  if let Some(m) = cap.name("h") {
-    let hours = m.as_str().parse::<i64>()?;
-    dur += Duration::hours(hours);
-  }
-  if let Some(m) = cap.name("m") {
-    let mins = m.as_str().parse::<i64>()?;
-    dur += Duration::minutes(mins);
-  }
-
-  Ok(dur)
 }

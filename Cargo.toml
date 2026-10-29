@@ -17,8 +17,6 @@ opt-level = 2
 
 [dependencies]
 eframe = "0.37.0"
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
-chrono-tz = "0.10.4"
 derive_builder = "0.20.2"
 intervaltree = "0.2.7"
 uuid = { version = "1.29.0", features = ["v4"] }
@@ -30,20 +28,18 @@ ical = { version = "0.11.0", features = ["ical"] }
 # for webdav support (work in progress)
 # kitchen-fridge = { git = "https://github.com/shouya/kitchen-fridge.git" }
 
-rusqlite = {version = "0.41.0", features = ["bundled", "chrono"] }
+rusqlite = {version = "0.41.0", features = ["bundled"] }
 anyhow = { version = "1.0.104" }
 log = "0.4.34"
 env_logger = "0.11.11"
-regex = "1.13.1"
 toml = "1.1.8"
 serde = "1.0.229"
-humantime = "2.4.0"
 notify-rust = { version = "4.18.2" }
 sysinfo = "0.39.6"
-serde_with = { version = "3.24.0", features = ["chrono"] }
 dirs = "7.0.0"
 filetime = "0.2.29"
 bimap = "0.6.3"
+jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
 
 [profile.release]
 lto = true

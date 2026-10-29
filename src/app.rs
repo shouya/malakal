@@ -1,9 +1,9 @@
 use std::sync::atomic::AtomicBool;
 use std::thread;
 
-use chrono::{Duration, FixedOffset};
 use eframe::egui::Ui;
 use eframe::{CreationContext, egui};
+use jiff::{Timestamp, ToSpan, tz::TimeZone};
 
 use crate::config::Config;
 use crate::hook::HookExecutor;
@@ -11,7 +11,7 @@ use crate::util::shared;
 use crate::{
   backend::Backend,
   notifier::Notifier,
-  util::{Result, Shared, now, today},
+  util::{Result, Shared, today},
   widget,
 };
 
@@ -76,10 +76,10 @@ impl App {
   pub fn new(
     config: &Config,
     day_count: usize,
-    timezone: FixedOffset,
+    timezone: TimeZone,
     backend: impl Backend + 'static,
   ) -> Result<Self> {
-    let first_day = today(&timezone) - Duration::days(day_count as i64 / 2);
+    let first_day = today(&timezone) - (day_count as i64 / 2).days();
     let backend: Shared<dyn Backend> = shared(backend);
     let notifier = Notifier::start(config, &backend);
 
@@ -88,7 +88,7 @@ impl App {
     let scheduler_ui = widget::ScheduleUiBuilder::default()
       .new_event_calendar(config.calendar_name.clone())
       .first_day(first_day)
-      .current_time(now(&timezone))
+      .current_time(Timestamp::now())
       .timezone(timezone)
       .day_count(day_count)
       .refresh_requested(true)

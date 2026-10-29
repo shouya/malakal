@@ -3,7 +3,7 @@ use std::{
   thread,
 };
 
-use chrono::Duration;
+use jiff::{SignedDuration, Timestamp};
 use log::warn;
 use notify_rust::Notification;
 use sysinfo::System;
@@ -11,7 +11,7 @@ use sysinfo::System;
 use crate::Config;
 use crate::backend::Backend;
 use crate::event::Event;
-use crate::util::{Result, Shared, utc_now};
+use crate::util::{Result, Shared};
 
 // Upcoming events are reloaded at least this often.
 const LOOKAHEAD_HOURS: i64 = 24;
@@ -29,7 +29,7 @@ impl Notifier {
       notification_timeout: config.notification_timeout,
       backend: backend.clone(),
       upcoming: vec![],
-      reload_at: utc_now(),
+      reload_at: Timestamp::now(),
     };
     thread::spawn(move || alarm.run(&rx));
 
@@ -44,12 +44,12 @@ impl Notifier {
 struct Alarm {
   switch: bool,
   blacklist_processes: Vec<String>,
-  notification_timeout: Duration,
+  notification_timeout: std::time::Duration,
   backend: Shared<dyn Backend>,
 
   // sorted by start time, latest first
   upcoming: Vec<Event>,
-  reload_at: crate::util::DateTime,
+  reload_at: Timestamp,
 }
 
 impl Alarm {
@@ -69,11 +69,14 @@ impl Alarm {
     let next_start = self.upcoming.last().map(|event| event.start);
     let wake_up_at =
       next_start.map_or(self.reload_at, |t| t.min(self.reload_at));
-    (wake_up_at - utc_now()).to_std().unwrap_or_default()
+    Timestamp::now()
+      .duration_until(wake_up_at)
+      .try_into()
+      .unwrap_or_default()
   }
 
   fn wake_up(&mut self) {
-    let now = utc_now();
+    let now = Timestamp::now();
     while let Some(event) = self.upcoming.pop_if(|event| event.start <= now) {
       if let Err(e) = self.notify(&event) {
         warn!("failed sending notification {e:?}");
@@ -86,8 +89,8 @@ impl Alarm {
   }
 
   fn reload(&mut self) {
-    let now = utc_now();
-    let until = now + Duration::hours(LOOKAHEAD_HOURS);
+    let now = Timestamp::now();
+    let until = now + SignedDuration::from_hours(LOOKAHEAD_HOURS);
     let events = self.backend.lock().unwrap().get_events(now, until);
 
     let mut upcoming = match events {
@@ -117,7 +120,7 @@ impl Alarm {
       .summary(&event.title)
       .appname("malakal")
       .auto_icon()
-      .timeout(self.notification_timeout.to_std()?)
+      .timeout(self.notification_timeout)
       .show()?;
 
     Ok(())

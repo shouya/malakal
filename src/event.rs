@@ -1,9 +1,9 @@
-use chrono::{FixedOffset, Offset, Timelike};
 use derive_builder::Builder;
+use jiff::{Timestamp, tz::TimeZone};
 
-use crate::util::{now, utc_now, DateTime};
+use crate::util::seconds_since_midnight;
 
-const SECS_PER_DAY: u64 = 24 * 3600;
+const SECS_PER_DAY: i64 = 24 * 3600;
 pub type EventId = String;
 
 #[derive(Builder, Clone, Debug, PartialEq)]
@@ -13,18 +13,18 @@ pub struct Event {
   pub calendar: String,
   pub title: String,
 
-  pub start: DateTime,
-  pub end: DateTime,
+  pub start: Timestamp,
+  pub end: Timestamp,
 
   // RFC 5545 DTSTAMP field
-  #[builder(default = "utc_now()")]
-  pub timestamp: DateTime,
+  #[builder(default = "Timestamp::now()")]
+  pub timestamp: Timestamp,
 
-  #[builder(default = "utc_now()")]
-  pub created_at: DateTime,
+  #[builder(default = "Timestamp::now()")]
+  pub created_at: Timestamp,
 
-  #[builder(default = "utc_now()")]
-  pub modified_at: DateTime,
+  #[builder(default = "Timestamp::now()")]
+  pub modified_at: Timestamp,
 
   #[builder(default)]
   pub description: Option<String>,
@@ -40,31 +40,23 @@ pub struct Event {
 }
 
 impl Event {
-  pub(crate) fn start_position_of_day(&self) -> f32 {
-    (self.start.num_seconds_from_midnight() as f32 / SECS_PER_DAY as f32)
-      .clamp(0.0, 1.0)
+  pub(crate) fn start_position_of_day(&self, tz: &TimeZone) -> f32 {
+    let seconds = seconds_since_midnight(tz.to_datetime(self.start));
+    (seconds as f32 / SECS_PER_DAY as f32).clamp(0.0, 1.0)
   }
 
   pub(crate) fn mark_changed(&mut self) {
-    self.modified_at = now(&self.modified_at.offset().fix());
+    self.modified_at = Timestamp::now();
     self.changed = true;
   }
 
   pub(crate) fn mark_deleted(&mut self) {
-    self.modified_at = now(&self.modified_at.offset().fix());
+    self.modified_at = Timestamp::now();
     self.deleted = true;
   }
 
   pub(crate) fn reset_dirty_flags(&mut self) {
     self.deleted = false;
     self.changed = false;
-  }
-
-  pub(crate) fn set_timezone(&mut self, tz: &FixedOffset) {
-    self.created_at = self.created_at.with_timezone(tz);
-    self.modified_at = self.modified_at.with_timezone(tz);
-    self.timestamp = self.timestamp.with_timezone(tz);
-    self.start = self.start.with_timezone(tz);
-    self.end = self.end.with_timezone(tz);
   }
 }

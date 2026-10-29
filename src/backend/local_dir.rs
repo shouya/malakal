@@ -1,6 +1,7 @@
 use anyhow::Context;
 use derive_builder::Builder;
 use filetime::FileTime;
+use jiff::Timestamp;
 use std::{
   ffi::OsStr,
   fs::DirEntry,
@@ -11,7 +12,7 @@ use crate::{
   backend::Backend,
   event::{Event, EventId},
   ical::ICal,
-  util::{DateTime, Result},
+  util::Result,
 };
 
 #[derive(Builder)]
@@ -59,7 +60,11 @@ impl LocalDir {
 }
 
 impl Backend for LocalDir {
-  fn get_events(&mut self, from: DateTime, to: DateTime) -> Result<Vec<Event>> {
+  fn get_events(
+    &mut self,
+    from: Timestamp,
+    to: Timestamp,
+  ) -> Result<Vec<Event>> {
     let mut events = vec![];
     for event in self.all_events() {
       if event_visible_in_range(&event, from, to) {
@@ -116,7 +121,7 @@ impl Backend for LocalDir {
   }
 }
 
-fn event_visible_in_range(e: &Event, start: DateTime, end: DateTime) -> bool {
+fn event_visible_in_range(e: &Event, start: Timestamp, end: Timestamp) -> bool {
   e.start.max(start) <= e.end.min(end)
 }
 
