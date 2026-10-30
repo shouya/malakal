@@ -241,7 +241,7 @@ impl ScheduleUi {
     let local = self.first_day.to_datetime(Time::midnight())
       + day.days()
       + SignedDuration::from_secs(seconds as i64);
-    let snapped = self.snap(local, RoundMode::Floor);
+    let snapped = self.snap(local, RoundMode::HalfFloor);
     let end_of_day =
       (self.first_day + (day + 1).days()).to_datetime(Time::midnight());
     self.to_timestamp(snapped.min(end_of_day))
