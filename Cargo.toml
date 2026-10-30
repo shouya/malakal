@@ -41,5 +41,8 @@ filetime = "0.2.29"
 bimap = "0.6.3"
 jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
 
+# egui_autocomplete = "15.0.0"
+egui_autocomplete = { git = "https://github.com/JakeHandsome/egui_autocomplete.git", branch = "egui-37" }
+
 [profile.release]
 lto = true

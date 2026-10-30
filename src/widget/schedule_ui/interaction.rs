@@ -5,6 +5,7 @@ use eframe::egui::{
   self, CursorIcon, EventFilter, Key, KeyboardShortcut, Label, LayerId,
   Modifiers, Rect, Response, Sense, Ui, UiBuilder, text::LayoutJob,
 };
+use egui_autocomplete::AutoCompleteTextEdit;
 use jiff::{Timestamp, tz::TimeZone};
 
 use crate::{
@@ -774,11 +775,7 @@ impl ScheduleUi {
     (galley, false)
   }
 
-  fn auto_suggest_event_titles(&self, input: &str) -> Vec<String> {
-    if input.trim_ascii().is_empty() {
-      return vec![];
-    }
-
+  fn auto_suggest_event_titles(&self) -> Vec<String> {
     let mut titles = self
       .events
       .iter()
@@ -787,8 +784,6 @@ impl ScheduleUi {
     titles.sort();
     titles.dedup();
 
-    titles.retain_mut(|t| t.contains(input) && t != input);
-    titles.truncate(5);
     titles
   }
 
@@ -801,23 +796,15 @@ impl ScheduleUi {
     rect: Rect,
     event: &mut Event,
   ) -> Option<bool> {
-    let text_edit = egui::TextEdit::singleline(&mut event.title);
+    // let text_edit = egui::TextEdit::singleline(&mut event.title);
 
     let popup_id = egui::Id::unique("event_title_completion");
-    let completion_popup =
-      egui::CompletionPopup::new(popup_id).word_boundary(|_| false);
-    let editor = move |ui: &mut egui::Ui| {
-      let out = completion_popup.show(ui, text_edit, |q| {
-        self
-          .auto_suggest_event_titles(q.text)
-          .into_iter()
-          .map(egui::Suggestion::new)
-          .collect()
-      });
-      out.text_edit.response.response
-    };
+    let candidates = self.auto_suggest_event_titles();
+    let text_edit = AutoCompleteTextEdit::new(&mut event.title, candidates)
+      .highlight_matches(true)
+      .max_suggestions(5);
 
-    let resp = ui.put(rect, editor);
+    let resp = ui.put(rect, text_edit);
 
     // Anything dragging outside the textedit should be equivalent to
     // losing focus. Note: we still need to allow dragging within the
