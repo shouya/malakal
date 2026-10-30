@@ -99,10 +99,7 @@ struct EventFocusRegistry {
 
 impl EventFocusRegistry {
   fn with_this<R>(ui: &Ui, f: impl FnOnce(&mut Self) -> R) -> R {
-    ui.memory_mut(|mem| {
-      let this: &mut Self = mem.data.get_temp_mut_or_default(ui.scope_id());
-      f(this)
-    })
+    ui.data_mut(|data| f(data.get_temp_mut_or_default(ui.scope_id())))
   }
 
   fn register(ui: &Ui, event_id: &EventId, resp: &Response) {
@@ -156,12 +153,12 @@ impl InteractingEvent {
   }
 
   fn get(ui: &Ui) -> Option<Self> {
-    ui.memory(|mem| mem.data.get_temp(Self::id()))
+    ui.data(|data| data.get_temp(Self::id()))
   }
 
   fn set(ui: &Ui, event: Event, state: FocusedEventState) {
     let value = InteractingEvent { event, state };
-    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), value));
+    ui.data_mut(|data| data.insert_temp(Self::id(), value));
   }
 
   fn save(self, ui: &Ui) {
@@ -169,17 +166,17 @@ impl InteractingEvent {
   }
 
   fn discard(ui: &Ui) {
-    ui.memory_mut(|mem| mem.data.remove::<Self>(Self::id()))
+    ui.data_mut(|data| data.remove::<Self>(Self::id()))
   }
 
   fn commit(self, ui: &Ui) {
-    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(), self.event));
+    ui.data_mut(|data| data.insert_temp(Self::id(), self.event));
     Self::discard(ui);
   }
 
   fn take_commited_event(ui: &Ui) -> Option<Event> {
-    let event = ui.memory(|mem| mem.data.get_temp(Self::id()));
-    ui.memory_mut(|mem| mem.data.remove::<Event>(Self::id()));
+    let event = ui.data(|data| data.get_temp(Self::id()));
+    ui.data_mut(|data| data.remove::<Event>(Self::id()));
     event
   }
 
@@ -211,13 +208,13 @@ impl RefocusingEvent {
 
   fn request_focus(ui: &Ui, event_id: &EventId) {
     let refocusing_event = Self::new(event_id);
-    ui.memory_mut(|mem| mem.data.insert_temp(Self::id(ui), refocusing_event));
+    ui.data_mut(|data| data.insert_temp(Self::id(ui), refocusing_event));
   }
 
   fn take(ui: &Ui) -> Option<Self> {
     let egui_id = Self::id(ui);
-    let rfe = ui.memory(|mem| mem.data.get_temp::<RefocusingEvent>(egui_id))?;
-    ui.memory_mut(|mem| mem.data.remove::<Self>(egui_id));
+    let rfe = ui.data(|data| data.get_temp::<RefocusingEvent>(egui_id))?;
+    ui.data_mut(|data| data.remove::<Self>(egui_id));
 
     Some(rfe)
   }
@@ -246,19 +243,15 @@ impl DeletedEvent {
   }
 
   fn set(ui: &Ui, event_id: &EventId) {
-    ui.memory_mut(|mem| {
-      mem.data.insert_temp(
-        Self::id(),
-        Self {
-          event_id: event_id.clone(),
-        },
-      )
-    });
+    let ev = Self {
+      event_id: event_id.clone(),
+    };
+    ui.data_mut(|data| data.insert_temp(Self::id(), ev));
   }
 
   fn take(ui: &Ui) -> Option<EventId> {
-    let deleted_event = ui.memory(|mem| mem.data.get_temp(Self::id()));
-    ui.memory_mut(|mem| mem.data.remove::<Self>(Self::id()));
+    let deleted_event = ui.data(|data| data.get_temp(Self::id()));
+    ui.data_mut(|data| data.remove::<Self>(Self::id()));
     deleted_event.map(|x: Self| x.event_id)
   }
 }
@@ -322,7 +315,7 @@ impl ScheduleUi {
       }
 
       let offset = DraggingEventYOffset(event_rect.top() - origin.y);
-      ui.memory_mut(|mem| mem.data.insert_temp(egui::Id::NULL, offset));
+      ui.data_mut(|data| data.insert_temp(egui::Id::NULL, offset));
       if ui.input(|input| input.modifiers.ctrl) {
         return Some(EventCloning);
       } else {
@@ -416,7 +409,7 @@ impl ScheduleUi {
 
     let mut pointer_pos = self.relative_pointer_pos(ui).unwrap();
     if let Some(offset_y) =
-      ui.memory(|mem| mem.data.get_temp::<DraggingEventYOffset>(egui::Id::NULL))
+      ui.data(|data| data.get_temp::<DraggingEventYOffset>(egui::Id::NULL))
     {
       pointer_pos.y += offset_y.0;
     }
@@ -587,8 +580,8 @@ impl ScheduleUi {
     let ev_id = EventFocusRegistry::get_event_id(ui, ui_id)?;
 
     let del_key_pressed = ui
-      .input_mut(|mem| mem.consume_key(Modifiers::NONE, Key::X))
-      || ui.input_mut(|mem| mem.consume_key(Modifiers::NONE, Key::Delete));
+      .input_mut(|input| input.consume_key(Modifiers::NONE, Key::X))
+      || ui.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Delete));
 
     if !del_key_pressed {
       return None;
@@ -891,8 +884,8 @@ impl ScheduleUi {
       let init_time = self.pointer_to_datetime_auto(ui, pointer_pos)?;
       let new_state = self.assign_new_event_dates(ui, init_time, &mut event)?;
 
-      ui.memory_mut(|mem| mem.data.insert_temp(id, event.id.clone()));
-      ui.memory_mut(|mem| mem.data.insert_temp(id, init_time));
+      ui.data_mut(|data| data.insert_temp(id, event.id.clone()));
+      ui.data_mut(|data| data.insert_temp(id, init_time));
 
       InteractingEvent::set(ui, event, new_state);
 
@@ -901,7 +894,7 @@ impl ScheduleUi {
 
     if response.drag_stopped() {
       // drag stopped, save the event
-      let event_id = ui.memory(|mem| mem.data.get_temp(id))?;
+      let event_id = ui.data(|data| data.get_temp(id))?;
       let mut value = InteractingEvent::get_id(ui, &event_id)?;
       value.state = Editing;
       value.save(ui);
@@ -910,8 +903,8 @@ impl ScheduleUi {
 
     if response.dragged_by(lmb) {
       // dragging, update the event's timestamps
-      let event_id: String = ui.memory(|mem| mem.data.get_temp(id))?;
-      let init_time = ui.memory(|mem| mem.data.get_temp(id))?;
+      let event_id: String = ui.data(|data| data.get_temp(id))?;
+      let init_time = ui.data(|data| data.get_temp(id))?;
       let mut value = InteractingEvent::get_id(ui, &event_id)?;
       let new_state =
         self.assign_new_event_dates(ui, init_time, &mut value.event)?;
@@ -1065,7 +1058,9 @@ fn find_adjacent_event(
 }
 
 fn is_drag_ongoing(ui: &Ui) -> bool {
-  ui.dragged_id().is_some() || ui.ctx().drag_stopped_id().is_some()
+  let dragging = ui.dragged_id().is_some();
+  let just_stopped = ui.ctx().drag_stopped_id().is_some();
+  dragging || just_stopped
 }
 
 fn disable_built_in_keyboard_focus_navigation(resp: &Response) {
@@ -1078,5 +1073,5 @@ fn disable_built_in_keyboard_focus_navigation(resp: &Response) {
 
   resp
     .ctx
-    .memory_mut(|m| m.set_focus_lock_filter(resp.id, event_filter));
+    .memory_mut(|mem| mem.set_focus_lock_filter(resp.id, event_filter));
 }
